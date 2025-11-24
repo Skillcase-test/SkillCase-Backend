@@ -5,7 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "seed":"node constants/seedStories.js"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +14,7 @@
   "description": "",
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
     "csv-parse": "^6.1.0",
     "csv-parser": "^3.2.0",
@@ -24,6 +26,8 @@
     "microsoft-cognitiveservices-speech-sdk": "^1.46.0",
     "multer": "^2.0.2",
     "mysql2": "^3.15.1",
+    "nodemailer": "^7.0.10",
+    "pdfkit": "^0.17.2",
     "pg": "^8.16.3",
     "uuid": "^13.0.0"
   },

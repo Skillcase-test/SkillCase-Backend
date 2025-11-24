@@ -3,19 +3,20 @@ const { Pool } = require("pg");
 const db_config = require("../config/configuration");
 const queries = require("../model/schema");
 
-// Create a connection pool postgresql://ps_skillcase_user:G03J1D285LMtGsaMJLwIwbc8Rp5UxPU8@dpg-d3ibbsc9c44c73akvpgg-a/ps_skillcase
 const pool = new Pool({
-  connectionString: "postgresql://ps_skillcase_20dl_user:MpjLxTVirnKUJ3iLXaLrwCEj0zgyqomZ@dpg-d3ips1p5pdvs73959460-a/ps_skillcase_20dl",
+  connectionString: db_config.db_config.connection_string,
   ssl: {
-    rejectUnauthorized: false, 
+    rejectUnauthorized: false,
   },
 });
-pool.connect()
-  .then(client => {
+
+pool
+  .connect()
+  .then((client) => {
     console.log("Connected to PostgreSQL DB");
     client.release();
   })
-  .catch(err => console.error("DB connection failed:", err));
+  .catch((err) => console.error("DB connection failed:", err));
 
 async function initDb(pool) {
   try {
@@ -28,6 +29,8 @@ async function initDb(pool) {
     await pool.query(queries.createInterview);
     await pool.query(queries.createPronounceSet);
     await pool.query(queries.createPronounceCards);
+    await pool.query(queries.createAgreement);
+    await pool.query(queries.createStory);
 
     console.log("Tables created or already exist!");
   } catch (err) {

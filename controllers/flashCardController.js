@@ -7,7 +7,7 @@ async function addFlashSet(req, res) {
     return res.status(400).send("No file uploaded");
   }
 
-  const {set_name, proficiency_level} = req.body;
+  const { set_name, proficiency_level } = req.body;
 
   const results = [];
 
@@ -33,8 +33,6 @@ async function addFlashSet(req, res) {
 
         const set_id = setInsert.rows[0].set_id;
 
-
-
         const cardRows = results.map((row) => [
           set_id,
           row.front_content,
@@ -48,7 +46,9 @@ async function addFlashSet(req, res) {
         cardRows.forEach((row, i) => {
           const baseIndex = i * 4;
           placeholders.push(
-            `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4})`
+            `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${
+              baseIndex + 4
+            })`
           );
           values.push(...row);
         });
@@ -81,17 +81,22 @@ async function addFlashSet(req, res) {
     });
 }
 
-async function deleteFlashSet(req,res){
-  const {set_name, proficiency_level} = req.body;
+async function deleteFlashSet(req, res) {
+  const { set_name, proficiency_level } = req.body;
 
-  if (!set_name || !proficiency_level) return res.status(400).json({'msg':'set_name or proficiency_level not found'});
-  try{
-  await pool.query("DELETE FROM flash_card_set where set_name = $1 AND proficiency_level= $2 AND language ='German'",[set_name,proficiency_level]);
-  res.status(200).json({message:'deleted chapter successfully'});
-  }
-  catch (err){
+  if (!set_name || !proficiency_level)
+    return res
+      .status(400)
+      .json({ msg: "set_name or proficiency_level not found" });
+  try {
+    await pool.query(
+      "DELETE FROM flash_card_set where set_name = $1 AND proficiency_level= $2 AND language ='German'",
+      [set_name, proficiency_level]
+    );
+    res.status(200).json({ message: "deleted chapter successfully" });
+  } catch (err) {
     console.log(err);
-    res.status(500).json({message:"couldn't delete the chapter"});
+    res.status(500).json({ message: "couldn't delete the chapter" });
   }
 }
-module.exports = { addFlashSet,deleteFlashSet };
+module.exports = { addFlashSet, deleteFlashSet };

@@ -6,10 +6,13 @@ const { v4: uuidv4 } = require("uuid");
 
 // SIGNUP
 async function signup(req, res) {
-  const {number, username, password,proficiency_level } = req.body;
+  const { number, username, password, proficiency_level } = req.body;
   console.log(req.body);
   try {
-    const result = await pool.query("SELECT * FROM app_user WHERE number = $1", [number]);
+    const result = await pool.query(
+      "SELECT * FROM app_user WHERE number = $1",
+      [number]
+    );
     const rows = result.rows;
 
     if (rows.length > 0) {
@@ -27,21 +30,33 @@ async function signup(req, res) {
   try {
     await pool.query(
       "INSERT INTO app_user (user_id, username, password, role,current_profeciency_level,number) VALUES ($1, $2, $3, $4,$5,$6)",
-      [newId, username, hashed, role,proficiency_level,number]
+      [newId, username, hashed, role, proficiency_level, number]
     );
 
     const token = jwt.sign(
-      { user_id: newId, username, role, user_prof_level : proficiency_level },
+      { user_id: newId, username, role, user_prof_level: proficiency_level },
       config.JWT_SECRET_KEY,
       { expiresIn: "60d" }
     );
 
     res.status(200).json({
-      user: { user_id: newId, username, role, user_prof_level: proficiency_level },
+      user: {
+        user_id: newId,
+        username,
+        role,
+        user_prof_level: proficiency_level,
+      },
       token,
     });
-    console.log({user: { user_id: newId, username, role, user_prof_level: proficiency_level },
-      token});
+    console.log({
+      user: {
+        user_id: newId,
+        username,
+        role,
+        user_prof_level: proficiency_level,
+      },
+      token,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Error while trying to create account" });
@@ -57,7 +72,10 @@ async function login(req, res) {
   const { number, password } = req.body;
 
   try {
-    const result = await pool.query("SELECT * FROM app_user WHERE number = $1", [number]);
+    const result = await pool.query(
+      "SELECT * FROM app_user WHERE number = $1",
+      [number]
+    );
     const rows = result.rows;
 
     if (rows.length === 0) {
@@ -72,13 +90,23 @@ async function login(req, res) {
     }
 
     const token = jwt.sign(
-      { user_id: user.user_id, username: user.username, role: user.role, user_prof_level:user.current_profeciency_level},
+      {
+        user_id: user.user_id,
+        username: user.username,
+        role: user.role,
+        user_prof_level: user.current_profeciency_level,
+      },
       config.JWT_SECRET_KEY,
       { expiresIn: "60d" }
     );
 
     res.status(200).json({
-      user: { user_id: user.user_id, username: user.username, role: user.role, user_prof_level: user.current_profeciency_level},
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        role: user.role,
+        user_prof_level: user.current_profeciency_level,
+      },
       token,
     });
   } catch (err) {
@@ -96,7 +124,10 @@ async function me(req, res) {
   const { user_id } = req.user;
 
   try {
-    const result = await pool.query("SELECT * FROM app_user WHERE user_id = $1", [user_id]);
+    const result = await pool.query(
+      "SELECT * FROM app_user WHERE user_id = $1",
+      [user_id]
+    );
     const rows = result.rows;
 
     if (rows.length === 0) {

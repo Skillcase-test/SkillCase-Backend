@@ -1,6 +1,3 @@
-
-
-
 const createFlashCardSet = `
 CREATE TABLE IF NOT EXISTS flash_card_set (
   set_id SERIAL PRIMARY KEY,
@@ -57,6 +54,22 @@ CREATE TABLE IF NOT EXISTS user_chapter_submissions (
 );
 `;
 
+const createPronounceSubmission = `
+CREATE TABLE IF NOT EXISTS user_chapter_submissions (
+  user_id VARCHAR(50),
+  set_id INT NOT NULL,
+  last_reviewed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  progress INT DEFAULT 0,
+  current_index INTEGER DEFAULT 0,
+  test_status BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, set_id),
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE,
+  FOREIGN KEY (set_id) REFERENCES flash_card_set(set_id) ON DELETE CASCADE
+);
+`;
+
 const createPronounceSet = `
 CREATE TABLE IF NOT EXISTS pronounce_card_set (
   pronounce_id SERIAL PRIMARY KEY,
@@ -69,7 +82,6 @@ CREATE TABLE IF NOT EXISTS pronounce_card_set (
   UNIQUE(pronounce_name,proficiency_level,language)
 );
 `;
-
 
 const createPronounceCards = `
 CREATE TABLE IF NOT EXISTS pronounce_card (
@@ -95,7 +107,7 @@ const createChTest = `
     modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(proficiency_level, test_name)
   );
-`
+`;
 
 const createFinalTest = `
 CREATE TABLE IF NOT EXISTS final_test(
@@ -107,7 +119,7 @@ CREATE TABLE IF NOT EXISTS final_test(
   modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(proficiency_level, test_name)
 );
-`
+`;
 
 const createInterview = `
   CREATE TABLE IF NOT EXISTS interview (
@@ -117,7 +129,34 @@ const createInterview = `
   interview_link TEXT NOT NULL,
   UNIQUE(proficiency_level,difficulty)
   );
-`
+`;
+
+const createAgreement = `
+CREATE TABLE IF NOT EXISTS agreement (
+  agreement_id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(20) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  agree BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+const createStory = `
+CREATE TABLE IF NOT EXISTS story (
+  story_id SERIAL PRIMARY KEY,
+  slug VARCHAR(255) NOT NULL UNIQUE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT DEFAULT '',
+  cover_image_url TEXT DEFAULT '',
+  hero_image_url TEXT DEFAULT '',
+  story TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -127,6 +166,7 @@ module.exports = {
   createFinalTest,
   createInterview,
   createPronounceCards,
-  createPronounceSet
-
+  createPronounceSet,
+  createAgreement,
+  createStory,
 };

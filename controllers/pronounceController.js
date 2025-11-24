@@ -1,14 +1,14 @@
-const fs = require('fs');
-const sdk = require('microsoft-cognitiveservices-speech-sdk');
+const fs = require("fs");
+const sdk = require("microsoft-cognitiveservices-speech-sdk");
 const stream = require("stream");
 const csv = require("csv-parser");
-const {pool} =require("../util/db")
+const { pool } = require("../util/db");
 
-const { SUBSCRIPTION_KEY, REGION } = require('../config/configuration');
+const { SUBSCRIPTION_KEY, REGION } = require("../config/configuration");
 
 async function asses(req, res) {
   if (!req.file) {
-    return res.status(400).json({ error: 'no file uploaded' });
+    return res.status(400).json({ error: "no file uploaded" });
   }
 
   try {
@@ -17,12 +17,15 @@ async function asses(req, res) {
     const audioBuffer = fs.readFileSync(audioPath);
 
     // Azure Speech Service setup
-    const speechConfig = sdk.SpeechConfig.fromSubscription(SUBSCRIPTION_KEY, REGION);
-    speechConfig.speechRecognitionLanguage = 'de-DE'; // German language
+    const speechConfig = sdk.SpeechConfig.fromSubscription(
+      SUBSCRIPTION_KEY,
+      REGION
+    );
+    speechConfig.speechRecognitionLanguage = "de-DE"; // German language
 
     // Validate input
     if (!reference_text || reference_text.trim().length === 0) {
-      return res.status(400).json({ error: 'reference text required' });
+      return res.status(400).json({ error: "reference text required" });
     }
 
     // Audio and assessment config
@@ -46,7 +49,8 @@ async function asses(req, res) {
     recognizer.recognizeOnceAsync(
       (result) => {
         if (result.reason === sdk.ResultReason.RecognizedSpeech) {
-          const assessment = sdk.PronunciationAssessmentResult.fromResult(result);
+          const assessment =
+            sdk.PronunciationAssessmentResult.fromResult(result);
 
           const finalResult = {
             recognizedText: result.text,
@@ -56,30 +60,34 @@ async function asses(req, res) {
             pronunciationScore: assessment.pronunciationScore,
           };
 
-          console.log('German Pronunciation Assessment:', finalResult);
+          console.log("German Pronunciation Assessment:", finalResult);
 
           fs.unlinkSync(audioPath);
 
           return res.json({
-            message: 'German pronunciation assessment completed successfully.',
+            message: "German pronunciation assessment completed successfully.",
             result: finalResult,
           });
         } else if (result.reason === sdk.ResultReason.NoMatch) {
           fs.unlinkSync(audioPath);
           return res.status(400).json({
-            error: 'No recognizable speech detected in the audio.',
+            error: "No recognizable speech detected in the audio.",
           });
         }
       },
       (err) => {
-        console.error('Recognition failed:', err);
+        console.error("Recognition failed:", err);
         fs.unlinkSync(audioPath);
-        return res.status(500).json({ error: 'Recognition failed', details: err });
+        return res
+          .status(500)
+          .json({ error: "Recognition failed", details: err });
       }
     );
   } catch (err) {
-    console.error('Error in German assessment:', err);
-    return res.status(500).json({ error: 'Failed to process German audio', details: err });
+    console.error("Error in German assessment:", err);
+    return res
+      .status(500)
+      .json({ error: "Failed to process German audio", details: err });
   }
 }
 
@@ -88,7 +96,7 @@ async function addPronounceSet(req, res) {
     return res.status(400).send("No file uploaded");
   }
 
-  const {pronounce_name, proficiency_level} = req.body;
+  const { pronounce_name, proficiency_level } = req.body;
 
   const results = [];
 
@@ -113,8 +121,6 @@ async function addPronounceSet(req, res) {
         );
 
         const pronounce_id = setInsert.rows[0].pronounce_id;
-
-
 
         const cardRows = results.map((row) => [
           pronounce_id,
@@ -161,17 +167,22 @@ async function addPronounceSet(req, res) {
     });
 }
 
-async function deletePronounceSet(req,res){
-  const {pronounce_name, proficiency_level} = req.body;
+async function deletePronounceSet(req, res) {
+  const { pronounce_name, proficiency_level } = req.body;
 
-  if (!pronounce_name || !proficiency_level) return res.status(400).json({'msg':'set_name or proficiency_level not found'});
-  try{
-  await pool.query("DELETE FROM pronounce_card_set where pronounce_name = $1 AND proficiency_level= $2 AND language ='German'",[pronounce_name,proficiency_level]);
-  res.status(200).json({message:'deleted chapter successfully'});
-  }
-  catch (err){
+  if (!pronounce_name || !proficiency_level)
+    return res
+      .status(400)
+      .json({ msg: "set_name or proficiency_level not found" });
+  try {
+    await pool.query(
+      "DELETE FROM pronounce_card_set where pronounce_name = $1 AND proficiency_level= $2 AND language ='German'",
+      [pronounce_name, proficiency_level]
+    );
+    res.status(200).json({ message: "deleted chapter successfully" });
+  } catch (err) {
     console.log(err);
-    res.status(500).json({message:"couldn't delete the chapter"});
+    res.status(500).json({ message: "couldn't delete the chapter" });
   }
 }
 
@@ -214,4 +225,57 @@ async function getPronounceSetByProf(req, res) {
   }
 }
 
-module.exports = { asses,addPronounceSet,deletePronounceSet,getPronounceCards,getPronounceSetByProf };
+async function saveUserChapterState(req, res) {
+  if (!req.user)
+    return res.status(400).json({ msg: "no authenticated user provided" });
+  const { user_id, set_id, status, order, current_index } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ msg: "user_id not found" });
+  }
+  if (!set_id) {
+    return res.status(400).json({ msg: "set_id not found" });
+  }
+  if (status === undefined) {
+    return res.status(400).json({ msg: "status not found" });
+  }
+  if (!order) {
+    return res.status(400).json({ msg: "order not found" });
+  }
+  if (current_index === undefined) {
+    return res.status(400).json({ msg: "current_idx not found" });
+  }
+
+  var status_fixed;
+  if (status === "null" || status === null || status === undefined) {
+    status_fixed = false;
+  } else {
+    status_fixed = status;
+  }
+  try {
+    const results = await pool.query(
+      `
+      INSERT INTO user_chapter_submissions (user_id, set_id, test_status,current_order,current_index,useDefault)
+      VALUES ($1, $2, $3,$4,$5,FALSE)
+      ON CONFLICT (user_id, set_id)
+      DO UPDATE SET test_status = EXCLUDED.test_status
+      ,current_order = EXCLUDED.current_order
+      ,current_index = EXCLUDED.current_index
+      ,useDefault = EXCLUDED.useDefault
+      `,
+      [user_id, set_id, status_fixed, order, current_index]
+    );
+
+    res.status(200).json({ msg: "ok" });
+  } catch (err) {
+    console.log("error saving user chapter state:", err);
+    res.status(500).json({ msg: "error saving user chapter state" });
+  }
+}
+
+module.exports = {
+  asses,
+  addPronounceSet,
+  deletePronounceSet,
+  getPronounceCards,
+  getPronounceSetByProf,
+};
