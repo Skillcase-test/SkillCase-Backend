@@ -8,6 +8,14 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false,
   },
+  max: 20, // Maximum 20 connections
+  min: 2, // Minimum 2 idle connections
+  idleTimeoutMillis: 30000, // Close idle connections after 30s
+  connectionTimeoutMillis: 10000, // Timeout after 10s if no connection
+});
+
+pool.on("error", (err, client) => {
+  console.error("Unexpected error on idle client", err);
 });
 
 pool

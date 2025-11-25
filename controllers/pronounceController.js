@@ -87,7 +87,7 @@ async function asses(req, res) {
     console.error("Error in German assessment:", err);
     return res
       .status(500)
-      .json({ error: "Failed to process German audio", details: err });
+      .json({ error: "Failed to process German audio", details: err.message });
   }
 }
 
