@@ -106,9 +106,23 @@ async function addPronounceSet(req, res) {
   bufferStream
     .pipe(csv({ mapHeaders: ({ header }) => header.trim() }))
     .on("data", (row) => {
-      results.push(row);
+      // Only add rows that have both front_content and back_content
+      if (
+        row.front_content &&
+        row.front_content.trim() &&
+        row.back_content &&
+        row.back_content.trim()
+      ) {
+        results.push(row);
+      }
     })
     .on("end", async () => {
+      if (results.length === 0) {
+        return res.status(400).json({
+          error:
+            "No valid cards found in CSV. Ensure each row has front_content and back_content.",
+        });
+      }
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
@@ -124,8 +138,8 @@ async function addPronounceSet(req, res) {
 
         const cardRows = results.map((row) => [
           pronounce_id,
-          row.front_content,
-          row.back_content,
+          row.front_content.trim(),
+          row.back_content.trim(),
         ]);
 
         const values = [];
@@ -156,7 +170,10 @@ async function addPronounceSet(req, res) {
       } catch (err) {
         await client.query("ROLLBACK");
         console.error("Transaction error:", err);
-        res.status(500).send("Error adding flashcard set");
+        res.status(500).json({
+          error: "Error adding pronunciation set",
+          details: err.message,
+        });
       } finally {
         client.release();
       }
