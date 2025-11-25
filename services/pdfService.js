@@ -5,72 +5,89 @@ const generateAgreementPdf = (data) => {
     try {
       const doc = new PDFDocument({ margin: 50, size: "A4" });
       const chunks = [];
-      // Collect PDF chunks
+
       doc.on("data", (chunk) => chunks.push(chunk));
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
 
-      // Header
+      /* -------------------------------- HEADER -------------------------------- */
       doc
         .fontSize(20)
         .fillColor("#163B72")
         .text("SKILLCASE EDUCATION PRIVATE LIMITED", { align: "center" })
-        .moveDown(0.5);
-      doc
-        .fontSize(16)
-        .fillColor("#EDB843")
-        .text("Student Training Agreement and Declaration", { align: "center" })
-        .moveDown(1);
+        .moveDown(0.3);
 
-      // Agreement confirmation box
+      doc
+        .fontSize(15)
+        .fillColor("#EDB843")
+        .text("Student Training Agreement and Declaration", {
+          align: "center",
+        })
+        .moveDown(1.2);
+
+      /* ---------------------- AGREEMENT CONFIRMATION HEADER ---------------------- */
       doc
         .fontSize(12)
-        .fillColor("#000000")
+        .fillColor("#000")
         .text("AGREEMENT CONFIRMATION", { align: "center", underline: true })
-        .moveDown(0.5);
+        .moveDown(0.6);
+
       doc
         .fontSize(10)
         .text(
-          `This confirms that the following individual has read, understood, and agreed to`
-        )
-        .text(
-          `the Terms and Conditions of Skillcase Education Private Limited.`
+          "This confirms that the following individual has read, understood, and agreed to the Terms and Conditions of Skillcase Education Private Limited.",
+          { align: "center" }
         )
         .moveDown(1);
 
-      // User details box
-      doc.rect(50, doc.y, 495, 100).stroke();
-      const boxY = doc.y + 15;
+      /* ----------------------------- DETAILS BOX ----------------------------- */
+      const boxX = 50;
+      const boxWidth = 495;
+      const paddingX = 65; // LEFT PADDING
+      const startY = doc.y;
 
-      doc.fontSize(11).font("Helvetica-Bold").text("Student Name:", 70, boxY);
-      doc.font("Helvetica").text(data.name, 200, boxY);
-      doc.font("Helvetica-Bold").text("Email Address:", 70, boxY + 25);
-      doc.font("Helvetica").text(data.email, 200, boxY + 25);
-      doc.font("Helvetica-Bold").text("Phone Number:", 70, boxY + 50);
-      doc.font("Helvetica").text(data.phoneNumber, 200, boxY + 50);
-      doc.font("Helvetica-Bold").text("Agreement Date:", 70, boxY + 75);
+      doc.rect(boxX, startY, boxWidth, 0).stroke();
+
+      doc.moveDown(0.6);
+
+      // Use padded X to start writing inside the box
+      doc.fontSize(11).font("Helvetica-Bold").text("Student Name:", paddingX);
+      doc.font("Helvetica").text(data.name, paddingX).moveDown(0.4);
+
+      doc.font("Helvetica-Bold").text("Email Address:", paddingX);
+      doc.font("Helvetica").text(data.email, paddingX).moveDown(0.4);
+
+      doc.font("Helvetica-Bold").text("Phone Number:", paddingX);
+      doc.font("Helvetica").text(data.phoneNumber, paddingX).moveDown(0.4);
+
+      doc.font("Helvetica-Bold").text("Agreement Date:", paddingX);
       doc.font("Helvetica").text(
         new Date(data.date).toLocaleString("en-IN", {
           dateStyle: "long",
           timeStyle: "short",
           timeZone: "Asia/Kolkata",
         }),
-        200,
-        boxY + 75
+        paddingX
       );
-      doc.moveDown(7);
 
-      // Terms and Conditions content
+      // Close box height based on final Y
+      const endY = doc.y + 10;
+      doc.rect(boxX, startY, boxWidth, endY - startY).stroke();
+
+      doc.moveDown(2);
+
+      /* -------------------------- TERMS & CONDITIONS -------------------------- */
       doc
         .fontSize(14)
         .fillColor("#163B72")
         .text("TERMS AND CONDITIONS", { underline: true })
-        .moveDown(0.5);
+        .moveDown(0.8);
+
       const sections = [
         {
           title: "1. Course Duration and Learning Progress",
           content:
-            "The time required to complete each language level (A1 to B2) depends on the Student's individual learning capacity, consistency, and personal effort. The Institution does not guarantee completion of any level within a fixed duration, as progress may vary.",
+            "The time required to complete each language level depends on the Student's individual learning capacity, consistency, and personal effort. The Institution does not guarantee completion of any level within a fixed duration, as progress may vary.",
         },
         {
           title: "2. Attendance and Participation",
@@ -108,45 +125,50 @@ const generateAgreementPdf = (data) => {
             "The Institution shall not be liable for direct, indirect, or consequential losses, including employment expectations, financial decisions, travel plans, or migration outcomes.",
         },
       ];
-      doc.fontSize(9).fillColor("#000000");
+
+      doc.fontSize(10).fillColor("#000");
+
       sections.forEach((section) => {
-        if (doc.y > 700) {
+        if (doc.y > 690) {
           doc.addPage();
+          doc.moveDown(0.2); // minimal space, prevents large gaps
         }
-        doc
-          .font("Helvetica-Bold")
-          .text(section.title, { continued: false })
-          .moveDown(0.3);
+
+        doc.font("Helvetica-Bold").text(section.title).moveDown(0.2);
+
         doc
           .font("Helvetica")
-          .text(section.content, { align: "justify" })
-          .moveDown(0.8);
+          .text(section.content, { align: "justify", lineGap: 2 })
+          .moveDown(1);
       });
 
-      // Declaration
-      if (doc.y > 650) {
+      /* ------------------------------- DECLARATION ------------------------------ */
+      if (doc.y > 690) {
         doc.addPage();
+        doc.moveDown(0.2);
       }
-      doc.moveDown(1);
+
       doc
         .fontSize(11)
         .font("Helvetica-Bold")
         .fillColor("#163B72")
         .text("STUDENT DECLARATION", { underline: true })
-        .moveDown(0.5);
+        .moveDown(0.6);
+
       doc
-        .fontSize(9)
+        .fontSize(10)
         .font("Helvetica")
-        .fillColor("#000000")
+        .fillColor("#000")
         .text(
-          "I hereby declare that I have read, understood, and agree to the above terms and conditions. This document serves as proof of my acceptance."
+          "I hereby declare that I have read, understood, and agree to the above terms and conditions. This document serves as proof of my acceptance.",
+          { lineGap: 2 }
         )
         .moveDown(2);
 
-      // Footer
+      /* --------------------------------- FOOTER -------------------------------- */
       doc
         .fontSize(8)
-        .fillColor("#666666")
+        .fillColor("#666")
         .text(
           `Document generated on: ${new Date().toLocaleString("en-IN", {
             timeZone: "Asia/Kolkata",
@@ -158,10 +180,11 @@ const generateAgreementPdf = (data) => {
           "This is a system-generated document and does not require a physical signature.",
           { align: "center" }
         );
+
       doc.end();
-    } catch (error) {
+    } catch (err) {
       console.log("Error in generateAgreementPdf service: ", error.message);
-      reject(error);
+      reject(err);
     }
   });
 };

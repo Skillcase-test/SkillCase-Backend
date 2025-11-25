@@ -16,7 +16,6 @@ const {
   optionalAuth,
 } = require("./middlewares/auth_middleware");
 
-const rateLimit = require("express-rate-limit");
 
 const app = express();
 const cors = require("cors");
@@ -26,24 +25,6 @@ const allowed_origins = [
   "https://terms-and-conditions-skillcase.vercel.app",
   "https://skill-case-frontend.vercel.app",
 ];
-
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per 15 minutes
-  message: "Too many requests, please try again later.",
-});
-
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5, // 5 login attempts per 15 minutes
-  message: "Too many login attempts, please try again later.",
-});
-
-const ttsLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 10, // 10 TTS requests per minute per user
-  message: "Too many TTS requests, please slow down.",
-});
 
 app.use(
   cors({
@@ -64,9 +45,6 @@ app.get("/", (req, res) => {
   res.send("FlashCard API with MySQL ready!");
 });
 
-app.use("/api/user/login", loginLimiter);
-app.use("/api/", apiLimiter);
-
 app.use("/api/admin", authMiddleware, authorizeRole("admin"), adminRouter);
 app.use("/api/pronounce", authMiddleware, pronounceRouter);
 app.use("/api/practice", optionalAuth, practiceRouter);
@@ -75,7 +53,7 @@ app.use("/api/test", testRouter);
 app.use("/api/interview", interviewRouter);
 app.use("/api/agreement", agreementRouter);
 app.use("/api/stories", authMiddleware, storyRouter);
-app.use("/api/tts", authMiddleware, ttsLimiter, ttsRouter);
+app.use("/api/tts", authMiddleware, ttsRouter);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");
