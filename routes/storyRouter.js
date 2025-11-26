@@ -7,4 +7,5 @@ const router = express.Router();
 
 router.get("/", getStories);
 router.get("/:slug", getStoryBySlug);
+
 module.exports = router;

@@ -16,7 +16,6 @@ const {
   optionalAuth,
 } = require("./middlewares/auth_middleware");
 
-
 const app = express();
 const cors = require("cors");
 const allowed_origins = [
@@ -24,6 +23,9 @@ const allowed_origins = [
   "http://localhost:5173",
   "https://terms-and-conditions-skillcase.vercel.app",
   "https://skill-case-frontend.vercel.app",
+  "https://learner.skillcase.in",
+  "https://skillcase-terms-and-condition.vercel.app",
+  "https://terms.skillcase.in",
 ];
 
 app.use(

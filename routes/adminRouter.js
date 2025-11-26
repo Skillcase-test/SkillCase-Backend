@@ -38,6 +38,12 @@ const {
 } = require("../controllers/analyticsController");
 
 const { getAllAgreements } = require("../controllers/agreementController");
+const {
+  createStory,
+  updateStory,
+  deleteStory,
+  getStories,
+} = require("../controllers/storyController");
 
 const router = express.Router();
 
@@ -80,5 +86,10 @@ router.get(
 );
 
 router.get("/agreements", getAllAgreements);
+
+router.get("/stories", getStories);
+router.post("/stories", createStory);
+router.put("/stories/:slug", updateStory);
+router.delete("/stories/:slug", deleteStory);
 
 module.exports = router;
