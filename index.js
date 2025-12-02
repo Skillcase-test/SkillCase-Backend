@@ -9,12 +9,20 @@ const pronounceRouter = require("./routes/pronounceRoute");
 const agreementRouter = require("./routes/agreementRouter");
 const storyRouter = require("./routes/storyRouter");
 const ttsRouter = require("./routes/ttsRouter");
+// const resumeRouter = require("./routes/resumeRouter");
+// const pdfRoutes = require("./routes/pdfRouter");
+const uploadRouter = require("./routes/uploadRouter");
+
+const conversationRouter = require("./routes/conversationRouter");
+const conversationAdminRouter = require("./routes/conversationAdminRouter");
 
 const {
   authMiddleware,
   authorizeRole,
   optionalAuth,
 } = require("./middlewares/auth_middleware");
+
+const { initializeGemini } = require("./config/gemini");
 
 const app = express();
 const cors = require("cors");
@@ -44,7 +52,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 app.get("/", (req, res) => {
-  res.send("FlashCard API with MySQL ready!");
+  res.send("Skillcase Backend running!");
 });
 
 app.use("/api/admin", authMiddleware, authorizeRole("admin"), adminRouter);
@@ -56,6 +64,17 @@ app.use("/api/interview", interviewRouter);
 app.use("/api/agreement", agreementRouter);
 app.use("/api/stories", authMiddleware, storyRouter);
 app.use("/api/tts", authMiddleware, ttsRouter);
+// app.use("/api/resume", authMiddleware, resumeRouter);
+// app.use("/api/pdf", pdfRoutes);
+app.use("/api/upload", uploadRouter);
+
+app.use("/api/conversation", authMiddleware, conversationRouter);
+app.use(
+  "/api/admin/conversation",
+  authMiddleware,
+  authorizeRole("admin"),
+  conversationAdminRouter
+);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");

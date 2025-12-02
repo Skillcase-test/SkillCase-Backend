@@ -8,10 +8,10 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false,
   },
-  max: 20, // Maximum 20 connections
-  min: 2, // Minimum 2 idle connections
-  idleTimeoutMillis: 30000, // Close idle connections after 30s
-  connectionTimeoutMillis: 10000, // Timeout after 10s if no connection
+  max: 20,
+  min: 2,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on("error", (err, client) => {
@@ -39,6 +39,10 @@ async function initDb(pool) {
     await pool.query(queries.createPronounceCards);
     await pool.query(queries.createAgreement);
     await pool.query(queries.createStory);
+    await pool.query(queries.createResume);
+    await pool.query(queries.createConversation);
+    await pool.query(queries.createConversationSentence);
+    await pool.query(queries.createUserConversationProgress);
 
     console.log("Tables created or already exist!");
   } catch (err) {

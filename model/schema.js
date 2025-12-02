@@ -157,6 +157,70 @@ CREATE TABLE IF NOT EXISTS story (
 );
 `;
 
+const createResume = `
+CREATE TABLE IF NOT EXISTS resume(
+  resume_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id VARCHAR(50) NOT NULL,
+  resume_name VARCHAR(255) NOT NULL,
+  resume_data JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_resume_user_id ON resume(user_id);
+CREATE INDEX IF NOT EXISTS idx_resume_created_at ON resume(created_at DESC);
+`;
+
+const createConversation = `
+CREATE TABLE IF NOT EXISTS conversation(
+  conversation_id SERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  topic VARCHAR(255),
+  proficiency_level VARCHAR(50) NOT NULL,
+  audio_url TEXT NOT NULL,
+  audio_duration FLOAT NOT NULL,
+  total_sentences INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_level ON conversation(proficiency_level);
+`;
+
+const createConversationSentence = `
+CREATE TABLE IF NOT EXISTS conversation_sentence(
+  sentence_id SERIAL PRIMARY KEY,
+  conversation_id INT NOT NULL,
+  sentence_order INT NOT NULL,
+  sentence_text TEXT NOT NULL,
+  speaker VARCHAR(100),
+  start_time FLOAT NOT NULL,
+  end_time FLOAT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (conversation_id) REFERENCES conversation(conversation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sentence_conversation ON conversation_sentence(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_sentence_order ON conversation_sentence(conversation_id, sentence_order);
+`;
+
+const createUserConversationProgress = `
+CREATE TABLE IF NOT EXISTS user_conversation_progress(
+  user_id VARCHAR(50) NOT NULL,
+  conversation_id INT NOT NULL,
+  current_sentence INT DEFAULT 0,
+  last_sentence_completed INT DEFAULT 0,
+  completed BOOLEAN DEFAULT FALSE,
+  last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(user_id, conversation_id),
+  FOREIGN KEY(user_id) REFERENCES app_user(user_id) ON DELETE CASCADE,
+  FOREIGN KEY(conversation_id) REFERENCES conversation(conversation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_progress ON user_conversation_progress(user_id); 
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -169,4 +233,8 @@ module.exports = {
   createPronounceSet,
   createAgreement,
   createStory,
+  createResume,
+  createConversation,
+  createConversationSentence,
+  createUserConversationProgress,
 };

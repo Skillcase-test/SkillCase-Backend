@@ -74,7 +74,7 @@ FROM prev_month_flash_card_interaction
 async function getPreviousMonthUserCompletionRate(req, res) {
   try {
     const result = await pool.query(`
-      SELECT * FROM flashcard_user_interaction_analytics LIMIT 10
+      SELECT * FROM flashcard_user_interaction_analytics ORDER BY submission_count DESC LIMIT 10
       `);
     res.status(200).json(result.rows);
   } catch (err) {

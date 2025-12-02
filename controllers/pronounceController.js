@@ -16,14 +16,12 @@ async function asses(req, res) {
     const audioPath = req.file.path;
     const audioBuffer = fs.readFileSync(audioPath);
 
-    // Azure Speech Service setup
     const speechConfig = sdk.SpeechConfig.fromSubscription(
       SUBSCRIPTION_KEY,
       REGION
     );
-    speechConfig.speechRecognitionLanguage = "de-DE"; // German language
+    speechConfig.speechRecognitionLanguage = "de-DE";
 
-    // Validate input
     if (!reference_text || reference_text.trim().length === 0) {
       return res.status(400).json({ error: "reference text required" });
     }
@@ -106,7 +104,6 @@ async function addPronounceSet(req, res) {
   bufferStream
     .pipe(csv({ mapHeaders: ({ header }) => header.trim() }))
     .on("data", (row) => {
-      // Only add rows that have both front_content and back_content
       if (
         row.front_content &&
         row.front_content.trim() &&
@@ -134,6 +131,9 @@ async function addPronounceSet(req, res) {
           [pronounce_name, proficiency_level, results.length]
         );
 
+        if (!setInsert.rows || setInsert.rows.length === 0) {
+          throw new Error("Failed to insert set");
+        }
         const pronounce_id = setInsert.rows[0].pronounce_id;
 
         const cardRows = results.map((row) => [

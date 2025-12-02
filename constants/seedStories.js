@@ -4,49 +4,118 @@ const path = require("path");
 
 const stories = [
   {
-    slug: "akshay-journey",
-    title: "Akshay's Journey to Deutschland",
+    slug: "broken-cycle",
+    title: "The Broken Cycle",
     description:
-      "A nurse from India who learns Deutsch and builds a new life in Germany.",
-    image: "akshay.png",
+      "Arjun learns how anger spreads and decides to break the cycle with kindness.",
+    image: "cycle.png",
     paragraphs: [
-      "Akshay was born in a small town in India. Coming from a poor Familie (family), he understood hardship early. His father worked in a factory, and his Frau (mother) managed the home with limited means.",
-      "He became a Kranke-care expert — a nursing professional in a local hospital. Every day, he would sprechen (to speak) with patients, hören (to hear) their problems, notieren (note) symptoms, and ergänzen (add) reports.",
-      "One day, a Herr (gentleman) from Deutschland visited the hospital wearing an elegant Anzug (suit). He spoke Deutsch (German) fluently.",
-      "From that day, Akshay decided to lernen (learn) Deutsch. He made a Tabelle (table) of new words and used a Telefon (phone) dictionary.",
-      "Soon, he applied for a position in Deutschland (Germany). The Interview was tough, but Akshay answered every Frage (question) clearly.",
-      "He finally moved to Deutschland, where his Hausnummer (house number) and Postleitzahl (postal code) were registered by the agency.",
-      "Akshay worked hard, completed a Spezialisierung (specialisation), and earned sehr (very) well.",
+      "Arjun was often shouted at by his Vater (father) who came home tired and stressed.",
+      "One Tag (day), Arjun shouted at a younger boy, Ravi, making him weinen (cry).",
+      "His Lehrerin (teacher) explained that anger passes from one Person (person) to another — a Zyklus (cycle).",
+      "Arjun understood and decided to brechen (break) the cycle.",
+      "When his father shouted again, Arjun responded freundlich (kindly).",
+      "His father's Herz (heart) softened, and things began to ändern (change).",
+      "Arjun also treated Ravi gently the next time he made a mistake.",
     ],
   },
+
   {
-    slug: "maria-first-day",
-    title: "Maria's First Day in the Krankenhaus",
+    slug: "priyas-honest-answer",
+    title: "Priya's Honest Answer",
     description:
-      "Maria starts her nursing job in a German hospital and learns important German words.",
-    image: "maria.png",
+      "A touching story of honesty, friendship, and doing the right thing.",
+    image: "priya.png",
     paragraphs: [
-      "Maria arrived at the Krankenhaus (hospital) full of excitement. She greeted everyone with a polite Guten (good) Morgen (morning).",
-      "Her supervisor, a freundliche (friendly) Schwester (nurse), welcomed her warmly.",
-      "During her rounds, Maria checked Patientenakten (records) and ensured every Medikament (medicine) was correct.",
-      'A patient asked, "Wasser (water), bitte (please)?" Maria smiled and replied, "Natürlich (of course)."',
-      "At lunchtime, she ate a fresh Salat (salad) in the Kantine (canteen) and talked about her Heimat (home).",
-      "By evening, Maria felt müde (tired) but glücklich (happy). She had survived her first day!",
+      "Priya, a very intelligent Mädchen (girl), wanted to win an Essay Wettbewerb (competition) with a Laptop prize.",
+      "On the Tag (day) of submission, her friend Maya cried because she forgot her essay at Haus (house).",
+      "Priya gave Maya her own essay and said she would say hers was forgotten.",
+      "Maya won, but later confessed the Wahrheit (truth) to the Schulleiter (principal).",
+      "Priya received a full Stipendium (scholarship) for her Bildung (education).",
+      "She learned honesty always brings the best Belohnung (reward).",
     ],
   },
+
   {
-    slug: "rahul-train-journey",
-    title: "Rahul's Train Journey Across Germany",
+    slug: "thieves-treasure",
+    title: "The Thieves and the Treasure",
     description:
-      "Rahul travels across Germany and learns useful travel vocabulary along the way.",
-    image: "rahul.png",
+      "Tenali Rama tricks two thieves who try to steal from his house.",
+    image: "thieves.png",
     paragraphs: [
-      "Rahul boarded the Zug (train) in Berlin and found his Sitzplatz (seat) while looking out of the Fenster (window).",
-      'When the Schaffner (conductor) arrived, Rahul said, "Hier (here) ist mein Ticket (ticket)."',
-      "He enjoyed the schöne (beautiful) Landschaft (landscape) and the Ruhe (quiet) inside the cabin.",
-      "At Leipzig station, a Durchsage (announcement) said the Zug (train) had a small Verspätung (delay).",
-      "Rahul bought a Brezel (pretzel) and a Kaffee (coffee) while waiting.",
-      "His Reise (journey) was lang (long) but wunderschön (beautiful), and he promised to travel more.",
+      "Two Diebe (thieves) entered Tenali's Haus (house) one Nacht (night).",
+      "Tenali pretended to tell his wife that he verwandle (transforms) gold into Steine (stones) at Nacht (night).",
+      "The thieves believed him and carried all the Steine (stones) out of the house.",
+      "They waited for them to verwandeln (transform) into gold — but nothing happened.",
+      "Tenali laughed, realizing they had removed all his useless junk.",
+      "The thieves worked die ganze Nacht (the whole night) for nothing.",
+    ],
+  },
+
+  {
+    slug: "greatest-poet",
+    title: "The Greatest Poet",
+    description:
+      "A proud poet challenges the king's court, but Tenali Rama teaches him a lesson.",
+    image: "poet.png",
+    paragraphs: [
+      "A proud Dichter (poet) arrived at King Krishnadevaraya's Hof (court) and claimed to be the greatest in the Welt (world).",
+      "He challenged poets to a Wettbewerb (competition) with 1000 gold Münzen (coins).",
+      "Tenali Rama accepted the challenge, dressed like a verrückt (crazy) farmer.",
+      "The poet recited a beautiful Gedicht (poem), but Tenali replied with nonsense in a strange Sprache (language).",
+      "When the poet couldn't verstehen (understand) it, Tenali said, “If you cannot understand mine, you lose!”",
+      "The court laughed. The poet realized he was tricked and left quietly.",
+    ],
+  },
+
+  {
+    slug: "elephant-and-mice",
+    title: "The Elephant and the Mice",
+    description:
+      "A story about kindness and how even the smallest creatures can help.",
+    image: "elephant.png",
+    paragraphs: [
+      "Near a forest, a groß (big) See (lake) was home to a Gruppe (group) of elephants.",
+      "On their Weg (way) to the lake, they often crushed the Mäuse (mice) living in small Löcher (holes).",
+      "The mouse king requested the elephants to nehmen (take) another path.",
+      "The elephants agreed and avoided the village thereafter.",
+      "One Tag (day), Jäger (hunters) trapped the elephants in heavy nets.",
+      "The mice came at Nacht (night) and nagen (gnawed) the ropes with their sharp Zähne (teeth).",
+      "By Morgen (morning), the elephants were frei (free) and thanked the tiny mice.",
+    ],
+  },
+
+  {
+    slug: "blue-jackal",
+    title: "The Blue Jackal",
+    description:
+      "A jackal pretends to be a king after falling into blue paint but learns a lesson.",
+    image: "jackal.png",
+    paragraphs: [
+      "Chanakya, a hungry Schakal (jackal), ran into a Dorf (village) one Tag (day) searching for food.",
+      "Angry Hunde (dogs) chased him, so he jumped into a vat of blue Farbe (paint).",
+      "When he came out, his ganzer Körper (entire body) was blau (blue). He had an Idee (idea).",
+      "He went to the forest and declared, “I am sent by Gott (God). I am your new König (king).”",
+      "The Tiere (animals) believed him. The Löwe (lion), elephant, and tiger all showed Respekt (respect).",
+      "But one Nacht (night), he accidentally howled like a jackal — “Aoooo!”",
+      "The Tiere realized he was a fake and chased him aus (out of) the forest.",
+    ],
+  },
+
+  {
+    slug: "monkey-and-crocodile",
+    title: "The Monkey and the Crocodile",
+    description:
+      "A clever monkey escapes danger using intelligence, learning German words along the way.",
+    image: "monkey.png",
+    paragraphs: [
+      "Ravi was a clever Affe (monkey) who lived on a Baum (tree) near the river. Every Tag (day), he would essen (eat) sweet fruits and enjoy the sunshine.",
+      "One morning, a Krokodil (crocodile) swam to the tree and said, “Hallo (hello)! I am sehr (very) hungry. Can you geben (give) me some fruits?”",
+      "Ravi was freundlich (friendly) and threw down mangoes. The crocodile said “Danke (thank you)!” and they soon became Freunde (friends).",
+      "But the crocodile's Frau (wife) was jealous. She wanted Ravi's Herz (heart) and told her Mann (husband) to bring it.",
+      "The crocodile invited Ravi to his Haus (house). Halfway through the river, he confessed that his wife wanted to essen (eat) Ravi's heart.",
+      "Ravi acted clever. He said he left his heart on the Baum (tree) for safety and they must go zurück (back).",
+      "Once they reached land, Ravi schnell (quickly) climbed up and shouted, “A true Freund (friend) never tries to kill!”",
     ],
   },
 ];

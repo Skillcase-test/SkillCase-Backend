@@ -7,7 +7,6 @@ const { v4: uuidv4 } = require("uuid");
 // SIGNUP
 async function signup(req, res) {
   const { number, username, password, proficiency_level } = req.body;
-  console.log(req.body);
   try {
     const result = await pool.query(
       "SELECT * FROM app_user WHERE number = $1",
@@ -40,15 +39,6 @@ async function signup(req, res) {
     );
 
     res.status(200).json({
-      user: {
-        user_id: newId,
-        username,
-        role,
-        user_prof_level: proficiency_level,
-      },
-      token,
-    });
-    console.log({
       user: {
         user_id: newId,
         username,

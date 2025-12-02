@@ -18,16 +18,21 @@ async function addFlashSet(req, res) {
     .pipe(csv({ mapHeaders: ({ header }) => header.trim() }))
     .on("data", (row) => {
       // Only add rows that have both front_content and back_content
-      if (row.front_content && row.front_content.trim() && 
-          row.back_content && row.back_content.trim()) {
+      if (
+        row.front_content &&
+        row.front_content.trim() &&
+        row.back_content &&
+        row.back_content.trim()
+      ) {
         results.push(row);
       }
     })
     .on("end", async () => {
       // Validate that we have at least one valid card
       if (results.length === 0) {
-        return res.status(400).json({ 
-          error: "No valid cards found in CSV. Ensure each row has front_content and back_content." 
+        return res.status(400).json({
+          error:
+            "No valid cards found in CSV. Ensure each row has front_content and back_content.",
         });
       }
 
@@ -42,6 +47,9 @@ async function addFlashSet(req, res) {
           [set_name, proficiency_level, results.length]
         );
 
+        if (!setInsert.rows || setInsert.rows.length === 0) {
+          throw new Error("Failed to insert set");
+        }
         const set_id = setInsert.rows[0].set_id;
 
         const cardRows = results.map((row) => [
@@ -81,9 +89,9 @@ async function addFlashSet(req, res) {
       } catch (err) {
         await client.query("ROLLBACK");
         console.error("Transaction error:", err);
-        res.status(500).json({ 
+        res.status(500).json({
           error: "Error adding flashcard set",
-          details: err.message 
+          details: err.message,
         });
       } finally {
         client.release();
