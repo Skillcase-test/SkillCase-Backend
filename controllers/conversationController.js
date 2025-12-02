@@ -119,7 +119,7 @@ const deleteConversation = async (req, res) => {
 const getAllConversations = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM conversation ORDER BY proficiency_level, created_at DESC`
+      `SELECT * FROM conversation ORDER BY proficiency_level, created_at ASC`
     );
 
     res.status(200).json({
@@ -154,7 +154,7 @@ const getConversationsByLevel = async (req, res) => {
       LEFT JOIN user_conversation_progress ucp 
         ON c.conversation_id = ucp.conversation_id AND ucp.user_id = $1
       WHERE c.proficiency_level = $2
-      ORDER BY c.created_at DESC`,
+      ORDER BY c.created_at ASC`,
       [user_id, prof_level]
     );
 
