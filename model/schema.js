@@ -221,6 +221,102 @@ CREATE TABLE IF NOT EXISTS user_conversation_progress(
 CREATE INDEX IF NOT EXISTS idx_conv_progress ON user_conversation_progress(user_id); 
 `;
 
+const createUserPronounceProgress = `
+CREATE TABLE IF NOT EXISTS user_pronounce_progress(
+  user_id VARCHAR(50) NOT NULL,
+  pronounce_id INT NOT NULL,
+  current_card_index INT DEFAULT 0,
+  completed BOOLEAN DEFAULT FALSE,
+  last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, pronounce_id),
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE,
+  FOREIGN KEY (pronounce_id) REFERENCES pronounce_card_set(pronounce_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_pronounce_progress ON user_pronounce_progress(user_id);
+`;
+
+const createUserStoryProgress = `
+CREATE TABLE IF NOT EXISTS user_story_progress (
+  user_id VARCHAR(50) NOT NULL,
+  story_id INT NOT NULL,
+  completed BOOLEAN DEFAULT FALSE,
+  completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, story_id),
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE,
+  FOREIGN KEY (story_id) REFERENCES story(story_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_story_progress ON user_story_progress(user_id);
+`;
+
+//creating new materialized views below
+
+const createPronounceAnalyticsView = `
+CREATE MATERIALIZED VIEW IF NOT EXISTS pronounce_analytics AS
+SELECT 
+  pcs.pronounce_id,
+  pcs.pronounce_name,
+  pcs.proficiency_level,
+  pcs.number_of_cards,
+  COUNT(DISTINCT upp.user_id) as total_users,
+  COUNT(DISTINCT CASE WHEN upp.completed = TRUE THEN upp.user_id END) as completed_users,
+  ROUND(
+    (COUNT(DISTINCT CASE WHEN upp.completed = TRUE THEN upp.user_id END)::numeric / 
+     NULLIF(COUNT(DISTINCT upp.user_id), 0) * 100), 
+    1
+  ) as completion_rate
+FROM pronounce_card_set pcs
+LEFT JOIN user_pronounce_progress upp ON pcs.pronounce_id = upp.pronounce_id
+GROUP BY pcs.pronounce_id, pcs.pronounce_name, pcs.proficiency_level, pcs.number_of_cards
+ORDER BY total_users DESC;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pronounce_analytics ON pronounce_analytics(pronounce_id);
+`;
+
+const createConversationAnalyticsView = `
+CREATE MATERIALIZED VIEW IF NOT EXISTS conversation_analytics AS
+SELECT 
+  c.conversation_id,
+  c.title,
+  c.topic,
+  c.proficiency_level,
+  c.total_sentences,
+  COUNT(DISTINCT ucp.user_id) as total_listeners,
+  COUNT(DISTINCT CASE WHEN ucp.completed = TRUE THEN ucp.user_id END) as completed_listeners,
+  ROUND(
+    (COUNT(DISTINCT CASE WHEN ucp.completed = TRUE THEN ucp.user_id END)::numeric / 
+     NULLIF(COUNT(DISTINCT ucp.user_id), 0) * 100), 
+    1
+  ) as completion_rate
+FROM conversation c
+LEFT JOIN user_conversation_progress ucp ON c.conversation_id = ucp.conversation_id
+GROUP BY c.conversation_id, c.title, c.topic, c.proficiency_level, c.total_sentences
+ORDER BY total_listeners DESC;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_analytics ON conversation_analytics(conversation_id);
+`;
+
+const createStoryAnalyticsView = `
+CREATE MATERIALIZED VIEW IF NOT EXISTS story_analytics AS
+SELECT 
+  s.story_id,
+  s.title as story_title,
+  'A1' as proficiency_level,
+  COUNT(DISTINCT usp.user_id) as total_readers,
+  COUNT(DISTINCT CASE WHEN usp.completed = TRUE THEN usp.user_id END) as completed_readers,
+  ROUND(
+    (COUNT(DISTINCT CASE WHEN usp.completed = TRUE THEN usp.user_id END)::numeric / 
+     NULLIF(COUNT(DISTINCT usp.user_id), 0) * 100), 
+    1
+  ) as completion_rate
+FROM story s
+LEFT JOIN user_story_progress usp ON s.story_id = usp.story_id
+GROUP BY s.story_id, s.title
+ORDER BY total_readers DESC;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_story_analytics ON story_analytics(story_id);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -237,4 +333,9 @@ module.exports = {
   createConversation,
   createConversationSentence,
   createUserConversationProgress,
+  createUserPronounceProgress,
+  createUserStoryProgress,
+  createPronounceAnalyticsView,
+  createConversationAnalyticsView,
+  createStoryAnalyticsView,
 };

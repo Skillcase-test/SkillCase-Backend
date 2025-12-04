@@ -76,6 +76,14 @@ app.use(
   conversationAdminRouter
 );
 
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");
 });

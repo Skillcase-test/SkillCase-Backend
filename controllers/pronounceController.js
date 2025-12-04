@@ -225,14 +225,21 @@ async function getPronounceCards(req, res) {
 
 async function getPronounceSetByProf(req, res) {
   const proficiency_level = req.params.prof_level;
+  const { user_id } = req.user;
 
   try {
     const result = await pool.query(
-      `SELECT f.*
-       FROM pronounce_card_set f
-       WHERE f.proficiency_level = $1
-       ORDER BY pronounce_name`,
-      [proficiency_level]
+      `SELECT 
+      f.pronounce_id,
+      f.pronounce_name,
+      f.language,
+      f.proficiency_level,
+      f.number_of_cards,
+      COALESCE(upp.completed, false) as completed,
+      COALESCE(upp.current_card_index, 0) as current_card_index,
+      upp.last_accessed
+      FROM pronounce_card_set f LEFT JOIN user_pronounce_progress upp ON f.pronounce_id = upp.pronounce_id AND upp.user_id=$1 WHERE f.proficiency_level = $2 ORDER BY f.pronounce_name`,
+      [user_id, proficiency_level]
     );
 
     res.status(200).json(result.rows);
@@ -289,10 +296,61 @@ async function saveUserChapterState(req, res) {
   }
 }
 
+async function getUserPronounceProgress(req, res) {
+  const { pronounce_id } = req.params;
+  const { user_id } = req.user;
+
+  try {
+    const result = await pool.query(
+      `SELECT * FROM user_pronounce_progress WHERE user_id=$1 AND pronounce_id=$2
+      `,
+      [user_id, pronounce_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(200).json({
+        current_card_index: 0,
+        completed: false,
+      });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.log("Error in fetching user pronounce progress:", error);
+    res.status(500).json({ msg: "Error in fetching user pronounce progress" });
+  }
+}
+
+async function saveUserPronounceProgress(req, res) {
+  const { pronounce_id } = req.params;
+  const { user_id } = req.user;
+  const { current_card_index, completed } = req.body;
+  if (current_card_index === undefined) {
+    return res.status(400).json({ msg: "current_card_index is required!" });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO user_pronounce_progress(user_id, pronounce_id, current_card_index, completed, last_accessed)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT(user_id, pronounce_id)
+      DO UPDATE SET current_card_index=EXCLUDED.current_card_index,
+      completed=EXCLUDED.completed,
+      last_accessed=NOW()
+      `,
+      [user_id, pronounce_id, current_card_index, completed || false]
+    );
+    res.status(200).json({ msg: "Progress saved successfully!" });
+  } catch (error) {
+    console.log("Error in saving user pronounce progress: ", error);
+    res.status(500).json({ msg: "Error in saving user pronounce progress" });
+  }
+}
+
 module.exports = {
   asses,
   addPronounceSet,
   deletePronounceSet,
   getPronounceCards,
   getPronounceSetByProf,
+  getUserPronounceProgress,
+  saveUserPronounceProgress,
 };

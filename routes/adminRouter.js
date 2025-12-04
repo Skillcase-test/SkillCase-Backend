@@ -35,6 +35,11 @@ const {
   getPreviousMonthUserCompletionRate,
   getPreviousMonthTestCompletionRate,
   getTotalUsers,
+  getStoryAnalytics,
+  getPronounceAnalytics,
+  getConversationAnalytics,
+  getUserDetailedHistory,
+  getRecentActivity,
 } = require("../controllers/analyticsController");
 
 const { getAllAgreements } = require("../controllers/agreementController");
@@ -84,6 +89,12 @@ router.get(
   "/analytics/prev-month-test-completetion-analytics",
   getPreviousMonthTestCompletionRate
 );
+
+router.get("/analytics/story-analytics", getStoryAnalytics);
+router.get("/analytics/pronounce-analytics", getPronounceAnalytics);
+router.get("/analytics/conversation-analytics", getConversationAnalytics);
+router.get("/analytics/user-history/:user_id", getUserDetailedHistory);
+router.get("/analytics/recent-activity", getRecentActivity);
 
 router.get("/agreements", getAllAgreements);
 

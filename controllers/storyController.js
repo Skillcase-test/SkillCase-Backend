@@ -1,23 +1,28 @@
 const { pool } = require("../util/db");
 
 const getStories = async (req, res) => {
+  const { user_id } = req.user; // Get authenticated user ID
+
   try {
     const query = `
       SELECT 
-        story_id,
-        slug,
-        title,
-        description,
-        cover_image_url AS "coverImageUrl",
-        hero_image_url AS "heroImageUrl",
-        story,
-        created_at AS "createdAt",
-        modified_at AS "modifiedAt"
-      FROM story
-      ORDER BY created_at DESC
+        s.story_id,
+        s.slug,
+        s.title,
+        s.description,
+        s.cover_image_url AS "coverImageUrl",
+        s.hero_image_url AS "heroImageUrl",
+        s.story,
+        s.created_at AS "createdAt",
+        s.modified_at AS "modifiedAt",
+        COALESCE(usp.completed, false) as completed
+      FROM story s
+      LEFT JOIN user_story_progress usp 
+        ON s.story_id = usp.story_id AND usp.user_id = $1
+      ORDER BY s.created_at DESC
     `;
 
-    const result = await pool.query(query);
+    const result = await pool.query(query, [user_id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "No stories found" });
@@ -213,10 +218,29 @@ const deleteStory = async (req, res) => {
   }
 };
 
+const markStoryAsComplete = async (req, res) => {
+  const { story_id } = req.params;
+  const { user_id } = req.user;
+  try {
+    await pool.query(
+      `INSERT INTO user_story_progress (user_id, story_id, completed, completed_at)
+       VALUES ($1, $2, TRUE, NOW())
+       ON CONFLICT (user_id, story_id)
+       DO UPDATE SET completed = TRUE, completed_at = NOW()`,
+      [user_id, story_id]
+    );
+    res.status(200).json({ message: "Story marked as complete" });
+  } catch (error) {
+    console.error("Error marking story as complete:", error);
+    res.status(500).json({ error: "Failed to mark story as complete" });
+  }
+};
+
 module.exports = {
   getStories,
   getStoryBySlug,
   createStory,
   updateStory,
   deleteStory,
+  markStoryAsComplete,
 };

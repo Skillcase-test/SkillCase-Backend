@@ -9,7 +9,7 @@ const pool = new Pool({
     rejectUnauthorized: false,
   },
   max: 20,
-  min: 2,
+  min: 5,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
 });
@@ -43,6 +43,11 @@ async function initDb(pool) {
     await pool.query(queries.createConversation);
     await pool.query(queries.createConversationSentence);
     await pool.query(queries.createUserConversationProgress);
+    await pool.query(queries.createUserPronounceProgress);
+    await pool.query(queries.createUserStoryProgress);
+    await pool.query(queries.createStoryAnalyticsView);
+    await pool.query(queries.createPronounceAnalyticsView);
+    await pool.query(queries.createConversationAnalyticsView);
 
     console.log("Tables created or already exist!");
   } catch (err) {
