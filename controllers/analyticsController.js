@@ -226,91 +226,83 @@ async function getUserDetailedHistory(req, res) {
 }
 
 async function getRecentActivity(req, res) {
-  const { timeframe } = req.query;
+  const { startDate, endDate } = req.query;
 
   try {
-    let hoursAgo;
-    switch (timeframe) {
-      case "24h":
-        hoursAgo = 24;
-        break;
-      case "7d":
-        hoursAgo = 168;
-        break;
-      case "30d":
-        hoursAgo = 720;
-        break;
-      default:
-        hoursAgo = 24;
+    if (!startDate || !endDate) {
+      return res.status(400).send("Both start and end date are required!");
     }
     const result = await pool.query(
       `
-      --FlashCards
+      WITH user_activities AS (
+        -- FlashCards
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(ucs.modified_at) as last_activity
+        FROM user_chapter_submissions ucs
+        JOIN app_user u ON ucs.user_id = u.user_id
+        WHERE ucs.test_status = true
+          AND ucs.modified_at >= $1::timestamp
+          AND ucs.modified_at <= $2::timestamp
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- PronounceCards
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(upp.last_accessed) as last_activity
+        FROM user_pronounce_progress upp
+        JOIN app_user u ON upp.user_id = u.user_id
+        WHERE upp.completed = true
+          AND upp.last_accessed >= $1::timestamp
+          AND upp.last_accessed <= $2::timestamp
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- Conversations
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(ucp.last_accessed) as last_activity
+        FROM user_conversation_progress ucp
+        JOIN app_user u ON ucp.user_id = u.user_id
+        WHERE ucp.completed = true
+          AND ucp.last_accessed >= $1::timestamp
+          AND ucp.last_accessed <= $2::timestamp
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- Stories
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(usp.completed_at) as last_activity
+        FROM user_story_progress usp
+        JOIN app_user u ON usp.user_id = u.user_id
+        WHERE usp.completed = true
+          AND usp.completed_at >= $1::timestamp
+          AND usp.completed_at <= $2::timestamp
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+      )
       SELECT 
-        'Flashcard Test' as activity_type,
-        u.username,
-        u.user_id,
-        fcs.set_name as item_name,
-        fcs.proficiency_level,
-        ucs.modified_at as completed_at
-      FROM user_chapter_submissions ucs
-      JOIN app_user u ON ucs.user_id = u.user_id
-      JOIN flash_card_set fcs ON ucs.set_id = fcs.set_id
-      WHERE ucs.test_status = true
-        AND ucs.modified_at >= NOW() - INTERVAL '1 hour' * $1
-      
-      UNION ALL
-      
-      --PronounceCards
-      SELECT 
-        'Pronounce Set' as activity_type,
-        u.username,
-        u.user_id,
-        pcs.pronounce_name as item_name,
-        pcs.proficiency_level,
-        upp.last_accessed as completed_at
-      FROM user_pronounce_progress upp
-      JOIN app_user u ON upp.user_id = u.user_id
-      JOIN pronounce_card_set pcs ON upp.pronounce_id = pcs.pronounce_id
-      WHERE upp.completed = true
-        AND upp.last_accessed >= NOW() - INTERVAL '1 hour' * $1
-      
-      UNION ALL
-      
-      --ConversationsCompletions
-      SELECT 
-        'Conversation' as activity_type,
-        u.username,
-        u.user_id,
-        c.title as item_name,
-        c.proficiency_level,
-        ucp.last_accessed as completed_at
-      FROM user_conversation_progress ucp
-      JOIN app_user u ON ucp.user_id = u.user_id
-      JOIN conversation c ON ucp.conversation_id = c.conversation_id
-      WHERE ucp.completed = true
-        AND ucp.last_accessed >= NOW() - INTERVAL '1 hour' * $1
-      
-      UNION ALL
-      
-      --StoryCompletions
-      SELECT 
-        'Story' as activity_type,
-        u.username,
-        u.user_id,
-        s.title as item_name,
-        'A1' as proficiency_level,
-        usp.completed_at
-      FROM user_story_progress usp
-      JOIN app_user u ON usp.user_id = u.user_id
-      JOIN story s ON usp.story_id = s.story_id
-      WHERE usp.completed = true
-        AND usp.completed_at >= NOW() - INTERVAL '1 hour' * $1
-      
-      ORDER BY completed_at DESC
-      LIMIT 100
+        user_id,
+        username,
+        proficiency_level,
+        MAX(last_activity) as last_activity
+      FROM user_activities
+      GROUP BY user_id, username, proficiency_level
+      ORDER BY last_activity DESC
       `,
-      [hoursAgo]
+      [startDate, endDate]
     );
     res.status(200).json(result.rows);
   } catch (error) {
