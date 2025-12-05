@@ -1,4 +1,3 @@
-// Import the PostgreSQL client
 const { Pool } = require("pg");
 const db_config = require("../config/configuration");
 const queries = require("../model/schema");
@@ -8,10 +7,11 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false,
   },
-  max: 20,
-  min: 5,
-  idleTimeoutMillis: 30000,
+  max: 10,
+  min: 0,
+  idleTimeoutMillis: 20000,
   connectionTimeoutMillis: 10000,
+  allowExitOnIdle: true,
 });
 
 pool.on("error", (err, client) => {
