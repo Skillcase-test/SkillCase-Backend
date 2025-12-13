@@ -16,6 +16,9 @@ const uploadRouter = require("./routes/uploadRouter");
 const conversationRouter = require("./routes/conversationRouter");
 const conversationAdminRouter = require("./routes/conversationAdminRouter");
 
+const cookieParser = require("cookie-parser");
+const ssoRouter = require("./routes/ssoRouter");
+
 const {
   authMiddleware,
   authorizeRole,
@@ -34,6 +37,7 @@ const allowed_origins = [
   "https://learner.skillcase.in",
   "https://skillcase-terms-and-condition.vercel.app",
   "https://terms.skillcase.in",
+  "https://skillcase.in",
 ];
 
 app.use(
@@ -49,6 +53,7 @@ const pool = db.pool;
 db.initDb(pool);
 
 app.use(express.json({ limit: "10mb" }));
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 app.get("/", (req, res) => {
@@ -75,6 +80,8 @@ app.use(
   authorizeRole("admin"),
   conversationAdminRouter
 );
+
+app.use("/api/sso", ssoRouter);
 
 app.get("/health", (req, res) => {
   res.status(200).json({
