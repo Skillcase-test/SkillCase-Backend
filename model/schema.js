@@ -317,6 +317,19 @@ ORDER BY total_readers DESC;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_story_analytics ON story_analytics(story_id);
 `;
 
+const createConversationTimestamp = `
+CREATE TABLE IF NOT EXISTS conversation_timestamp(
+  timestamp_id SERIAL PRIMARY KEY,
+  conversation_id INT NOT NULL,
+  label VARCHAR(255),
+  time_seconds FLOAT NOT NULL,
+  display_order INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (conversation_id) REFERENCES conversation(conversation_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_timestamp_conversation ON conversation_timestamp(conversation_id);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -338,4 +351,5 @@ module.exports = {
   createPronounceAnalyticsView,
   createConversationAnalyticsView,
   createStoryAnalyticsView,
+  createConversationTimestamp,
 };

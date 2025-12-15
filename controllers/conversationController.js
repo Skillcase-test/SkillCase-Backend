@@ -70,6 +70,18 @@ const createConversation = async (req, res) => {
 
     await Promise.all(sentenceInserts);
 
+    //add timestamps
+    if (conversationData.timestamps.length > 0) {
+      const timestampInserts = conversationData.timestamps.map((t) => {
+        return pool.query(
+          `INSERT INTO conversation_timestamp (conversation_id, label, time_seconds, display_order)
+       VALUES ($1, $2, $3, $4)`,
+          [conversationId, t.label, t.timeSeconds, t.displayOrder]
+        );
+      });
+      await Promise.all(timestampInserts);
+    }
+
     res.status(201).json({
       success: true,
       message: "Conversation created successfully",
@@ -181,6 +193,13 @@ const getConversationById = async (req, res) => {
       [conversation_id]
     );
 
+    const timestampsResult = await pool.query(
+      `SELECT * FROM conversation_timestamp 
+   WHERE conversation_id = $1 
+   ORDER BY display_order ASC`,
+      [conversation_id]
+    );
+
     if (conversationResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -210,6 +229,7 @@ const getConversationById = async (req, res) => {
         conversation: conversationResult.rows[0],
         sentences: sentencesResult.rows,
         progress: progressResult.rows[0],
+        timestamps: timestampsResult.rows,
       },
     });
   } catch (error) {
