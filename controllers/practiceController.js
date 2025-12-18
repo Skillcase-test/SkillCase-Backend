@@ -9,7 +9,7 @@ async function getFlashSetByProf(req, res) {
 
   try {
     const result = await pool.query(
-      `SELECT f.*,u.user_id,u.test_status,u.last_reviewed,u.created_at,u.modified_at  
+      `SELECT f.*, u.user_id, u.test_status, u.current_index, u.last_reviewed 
        FROM flash_card_set f
        LEFT JOIN user_chapter_submissions u
        ON f.set_id = u.set_id AND u.user_id = $1
