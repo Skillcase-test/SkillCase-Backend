@@ -330,6 +330,46 @@ CREATE TABLE IF NOT EXISTS conversation_timestamp(
 CREATE INDEX IF NOT EXISTS idx_timestamp_conversation ON conversation_timestamp(conversation_id);
 `;
 
+const createUserDailyActivity = `
+CREATE TABLE IF NOT EXISTS user_daily_activity (
+  activity_id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL,
+  activity_date DATE NOT NULL,
+  flashcards_practiced INT DEFAULT 0,
+  daily_goal_met BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, activity_date),
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_daily_activity_user ON user_daily_activity(user_id);
+CREATE INDEX IF NOT EXISTS idx_daily_activity_date ON user_daily_activity(activity_date);
+`;
+const createUserStreak = `
+CREATE TABLE IF NOT EXISTS user_streak (
+  user_id VARCHAR(50) PRIMARY KEY,
+  current_streak INT DEFAULT 0,
+  longest_streak INT DEFAULT 0,
+  last_goal_date DATE,
+  streak_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE
+);
+`;
+
+const createUserFlippedCards = `
+CREATE TABLE IF NOT EXISTS user_flipped_cards (
+  user_id VARCHAR(50) NOT NULL,
+  set_id INT NOT NULL,
+  card_index INT NOT NULL,
+  flipped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, set_id, card_index),
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE,
+  FOREIGN KEY (set_id) REFERENCES flash_card_set(set_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_flipped_cards_user_set 
+ON user_flipped_cards(user_id, set_id);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -352,4 +392,7 @@ module.exports = {
   createConversationAnalyticsView,
   createStoryAnalyticsView,
   createConversationTimestamp,
+  createUserDailyActivity,
+  createUserStreak,
+  createUserFlippedCards,
 };

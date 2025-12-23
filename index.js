@@ -16,6 +16,8 @@ const uploadRouter = require("./routes/uploadRouter");
 const conversationRouter = require("./routes/conversationRouter");
 const conversationAdminRouter = require("./routes/conversationAdminRouter");
 
+const streakRouter = require("./routes/streakRouter");
+
 const cookieParser = require("cookie-parser");
 const ssoRouter = require("./routes/ssoRouter");
 
@@ -90,6 +92,8 @@ app.get("/health", (req, res) => {
     uptime: process.uptime(),
   });
 });
+
+app.use("/api/streak", authMiddleware, streakRouter);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");

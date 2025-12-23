@@ -73,23 +73,25 @@ async function saveUserChapterState(req, res) {
   try {
     const results = await pool.query(
       `
-      INSERT INTO user_chapter_submissions (user_id, set_id, test_status,current_order,current_index,useDefault)
-      VALUES ($1, $2, $3,$4,$5,FALSE)
+      INSERT INTO user_chapter_submissions (user_id, set_id, test_status,current_order,current_index,useDefault,last_reviewed)
+      VALUES ($1, $2, $3,$4,$5,FALSE,CURRENT_TIMESTAMP)
       ON CONFLICT (user_id, set_id)
       DO UPDATE SET test_status = EXCLUDED.test_status
       ,current_order = EXCLUDED.current_order
       ,current_index = EXCLUDED.current_index
       ,useDefault = EXCLUDED.useDefault
+      ,last_reviewed = CURRENT_TIMESTAMP
       `,
       [user_id, set_id, status_fixed, order, current_index]
     );
 
     res.status(200).json({ msg: "ok" });
   } catch (err) {
-    console.log("error saving user chapter state:", err);
+    console.error("Error saving user chapter state:", err);
     res.status(500).json({ msg: "error saving user chapter state" });
   }
 }
+
 async function getUserChapterState(req, res) {
   if (!req.user)
     return res.status(400).json({ msg: "no authenticated user provided" });
