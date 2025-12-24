@@ -45,6 +45,9 @@ async function sendNotification(tokens, title, body) {
     tokens,
     notification: { title, body },
     android: { priority: "high" },
+    data: {
+      deepLink: "/continue",
+    },
   };
 
   try {
@@ -82,21 +85,6 @@ function initStreakNotificationJobs() {
         tokens,
         "⏰ Dont Break Your Streak!",
         "You havent practiced today. Just 5 minutes to keep your streak!"
-      );
-    },
-    { timezone: "Asia/Kolkata" }
-  );
-
-  // 6 PM IST - TEST notification
-  cron.schedule(
-    "0 18 * * *",
-    async () => {
-      console.log("Running 6 PM TEST notification job...");
-      const tokens = await getAllUserTokens();
-      await sendNotification(
-        tokens,
-        "✅ Scheduled Notifications Work!",
-        "This is a test notification. You can remove this after confirming."
       );
     },
     { timezone: "Asia/Kolkata" }
