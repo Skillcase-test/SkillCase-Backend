@@ -1,3 +1,5 @@
+require("dotenv").config();
+require("./services/firebaseService");
 const db = require("./util/db");
 const express = require("express");
 const adminRouter = require("./routes/adminRouter");
@@ -21,6 +23,10 @@ const streakRouter = require("./routes/streakRouter");
 const cookieParser = require("cookie-parser");
 const ssoRouter = require("./routes/ssoRouter");
 
+const updateRouter = require("./routes/otaUpdateRouter");
+const notificationRouter = require("./routes/notificationRouter");
+const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
+
 const {
   authMiddleware,
   authorizeRole,
@@ -40,6 +46,11 @@ const allowed_origins = [
   "https://skillcase-terms-and-condition.vercel.app",
   "https://terms.skillcase.in",
   "https://skillcase.in",
+
+  //for the app
+  "capacitor://localhost",
+  "https://localhost",
+  "http://localhost",
 ];
 
 app.use(
@@ -53,6 +64,8 @@ app.use(
 const pool = db.pool;
 
 db.initDb(pool);
+
+initStreakNotificationJobs();
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -94,6 +107,16 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/streak", authMiddleware, streakRouter);
+
+app.use("/updates", express.static("public/updates")); // Serve bundles
+app.use("/api/updates", updateRouter);
+
+app.use(
+  "/api/notifications",
+  authMiddleware,
+  authorizeRole("admin"),
+  notificationRouter
+);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");

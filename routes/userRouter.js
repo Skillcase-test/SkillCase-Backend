@@ -7,4 +7,6 @@ router.post("/login", userController.login);
 router.post("/signup", userController.signup);
 router.post("/me", authMiddleware, userController.me);
 
+router.post("/fcm-token", authMiddleware, userController.saveFcmToken);
+
 module.exports = router;

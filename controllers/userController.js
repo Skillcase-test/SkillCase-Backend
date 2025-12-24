@@ -135,4 +135,22 @@ async function me(req, res) {
   }
 }
 
-module.exports = { login, signup, me };
+//save firebase token for notifications
+const saveFcmToken = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const { fcmToken } = req.body;
+
+    await pool.query("UPDATE app_user SET fcm_token = $1 WHERE user_id = $2", [
+      fcmToken,
+      userId,
+    ]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error saving FCM token:", error);
+    res.status(500).json({ error: "Failed to save FCM token" });
+  }
+};
+
+module.exports = { login, signup, me, saveFcmToken };
