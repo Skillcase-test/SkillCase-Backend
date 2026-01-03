@@ -25,7 +25,10 @@ const ssoRouter = require("./routes/ssoRouter");
 
 const updateRouter = require("./routes/otaUpdateRouter");
 const notificationRouter = require("./routes/notificationRouter");
+const leadRouter = require("./routes/leadRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
+const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 
 const {
   authMiddleware,
@@ -66,6 +69,7 @@ const pool = db.pool;
 db.initDb(pool);
 
 initStreakNotificationJobs();
+initMessageSchedulerJob();
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -117,6 +121,8 @@ app.use(
   authorizeRole("admin"),
   notificationRouter
 );
+
+app.use("/api/leads", leadRouter);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");

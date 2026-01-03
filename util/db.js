@@ -52,6 +52,8 @@ async function initDb(pool) {
     await pool.query(queries.createUserDailyActivity);
     await pool.query(queries.createUserStreak);
     await pool.query(queries.createUserFlippedCards);
+    await pool.query(queries.createLeads);
+    await pool.query(queries.createScheduledMessages);
 
     console.log("Tables created or already exist!");
   } catch (err) {

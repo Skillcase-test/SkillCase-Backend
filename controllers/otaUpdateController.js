@@ -1,4 +1,4 @@
-const CURRENT_VERSION = "1.0.0";
+const CURRENT_VERSION = "1.0.2";
 
 const BUNDLE_URL = `${process.env.BACKEND_URL}/updates/bundle.zip`;
 

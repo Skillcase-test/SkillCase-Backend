@@ -370,6 +370,41 @@ CREATE INDEX IF NOT EXISTS idx_user_flipped_cards_user_set
 ON user_flipped_cards(user_id, set_id);
 `;
 
+//leads
+
+const createLeads = `
+CREATE TABLE IF NOT EXISTS leads (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  qualification VARCHAR(100),
+  experience VARCHAR(100),
+  source VARCHAR(50) NOT NULL DEFAULT 'website',
+  facebook_lead_id VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone);
+CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
+`;
+
+const createScheduledMessages = `
+CREATE TABLE IF NOT EXISTS scheduled_messages (
+  id SERIAL PRIMARY KEY,
+  lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+  template_name VARCHAR(100) NOT NULL,
+  campaign_name VARCHAR(100) NOT NULL,
+  scheduled_at TIMESTAMP NOT NULL,
+  sent_at TIMESTAMP,
+  status VARCHAR(20) DEFAULT 'pending',
+  retry_count INTEGER DEFAULT 0,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_messages_pending 
+ON scheduled_messages(scheduled_at, status) 
+WHERE status = 'pending';
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -395,4 +430,6 @@ module.exports = {
   createUserDailyActivity,
   createUserStreak,
   createUserFlippedCards,
+  createLeads,
+  createScheduledMessages,
 };
