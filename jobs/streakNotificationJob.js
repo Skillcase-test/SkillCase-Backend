@@ -38,21 +38,25 @@ async function getUsersWithoutStreak() {
 }
 
 //Log Notifications
-async function logSentNotifications(tokens, notificationType) {
+async function logSentNotifications(tokens, notificationType, sentTimestamp) {
   try {
     const result = await pool.query(
       `SELECT user_id FROM app_user WHERE fcm_token = ANY($1)`,
       [tokens]
     );
     const userIds = result.rows.map((row) => row.user_id);
-    
+
     if (userIds.length === 0) return;
 
-    const values = userIds.map((_, i) => 
-      `($${i * 2 + 1}, $${i * 2 + 2}, NOW())`
-    ).join(",");
-    
-    const params = userIds.flatMap(userId => [userId, notificationType]);
+    const values = userIds
+      .map((_, i) => `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`)
+      .join(",");
+
+    const params = userIds.flatMap((userId) => [
+      userId,
+      notificationType,
+      sentTimestamp,
+    ]);
     await pool.query(
       `INSERT INTO notification_analytics (user_id, notification_type, sent_at)
        VALUES ${values}`,
@@ -62,9 +66,12 @@ async function logSentNotifications(tokens, notificationType) {
     console.error("Error logging sent notifications:", error);
   }
 }
+
 // Send push notification
 async function sendNotification(tokens, title, body, notificationType) {
   if (tokens.length === 0) return;
+
+  const sentTimestamp = new Date().toISOString();
 
   const message = {
     tokens,
@@ -73,7 +80,7 @@ async function sendNotification(tokens, title, body, notificationType) {
     data: {
       deepLink: "/continue",
       notificationType: notificationType,
-      sentAt: new Date().toISOString(),
+      sentAt: sentTimestamp,
     },
   };
 
@@ -81,8 +88,8 @@ async function sendNotification(tokens, title, body, notificationType) {
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`Sent to ${response.successCount}/${tokens.length} devices`);
 
-    // Log Sent Notifications
-    await logSentNotifications(tokens, notificationType);
+    // Log Sent Notifications with the SAME timestamp
+    await logSentNotifications(tokens, notificationType, sentTimestamp);
   } catch (err) {
     console.error("Notification error:", err);
   }
