@@ -170,28 +170,17 @@ const saveFcmToken = async (req, res) => {
 async function updateUserActivity(req, res) {
   try {
     const userId = req.user?.user_id;
-    const { appVersion } = req.body;
 
     if (!userId) {
       return res.status(401).json({ msg: "Unauthorized" });
     }
 
-    // Update last_activity_at and optionally app_version
-    if (appVersion) {
-      await pool.query(
-        `UPDATE app_user 
-         SET last_activity_at = NOW(), app_version = $2
-         WHERE user_id = $1`,
-        [userId, appVersion]
-      );
-    } else {
-      await pool.query(
-        `UPDATE app_user 
-         SET last_activity_at = NOW() 
-         WHERE user_id = $1`,
-        [userId]
-      );
-    }
+    await pool.query(
+      `UPDATE app_user 
+       SET last_activity_at = NOW() 
+       WHERE user_id = $1`,
+      [userId]
+    );
 
     res.status(200).json({ success: true });
   } catch (error) {
