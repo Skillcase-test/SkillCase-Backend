@@ -11,6 +11,7 @@ router.post("/me", authMiddleware, userController.me);
 router.post("/fcm-token", authMiddleware, userController.saveFcmToken);
 
 router.post("/heartbeat", authMiddleware, userController.updateUserActivity);
+router.post("/app-version", authMiddleware, userController.updateAppVersion);
 
 router.post(
   "/complete-onboarding",
