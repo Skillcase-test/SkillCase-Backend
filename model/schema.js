@@ -317,6 +317,28 @@ ORDER BY total_readers DESC;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_story_analytics ON story_analytics(story_id);
 `;
 
+const createNotificationAnalytics = `
+CREATE TABLE IF NOT EXISTS notification_analytics (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL,
+  notification_type VARCHAR(50) NOT NULL, -- 'morning_reminder' or 'evening_reminder'
+  sent_at TIMESTAMP NOT NULL,
+  opened_at TIMESTAMP,
+  opened BOOLEAN DEFAULT FALSE,
+  deep_link_data TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_notification_analytics_user 
+  ON notification_analytics(user_id);
+  
+CREATE INDEX IF NOT EXISTS idx_notification_analytics_sent_at 
+  ON notification_analytics(sent_at DESC);
+  
+CREATE INDEX IF NOT EXISTS idx_notification_analytics_type 
+  ON notification_analytics(notification_type);
+`;
+
 const createConversationTimestamp = `
 CREATE TABLE IF NOT EXISTS conversation_timestamp(
   timestamp_id SERIAL PRIMARY KEY,
@@ -405,6 +427,60 @@ ON scheduled_messages(scheduled_at, status)
 WHERE status = 'pending';
 `;
 
+const createOtaUpdateLog = `
+CREATE TABLE IF NOT EXISTS ota_update_log (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) REFERENCES app_user(user_id) ON DELETE CASCADE,
+  event VARCHAR(30) NOT NULL,
+  target_version VARCHAR(20),
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ota_log_event ON ota_update_log(event);
+CREATE INDEX IF NOT EXISTS idx_ota_log_created ON ota_update_log(created_at);
+`;
+
+//For compatibility
+const alterAppUser = `
+ALTER TABLE app_user 
+  ADD COLUMN IF NOT EXISTS fullname VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS email VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS countrycode VARCHAR(10) DEFAULT '+91',
+  ADD COLUMN IF NOT EXISTS phone VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS qualification VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS language_level VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS experience VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS status SMALLINT DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS zohoid VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS article_education_complete BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS app_version VARCHAR(20);
+
+  UPDATE app_user SET phone = number WHERE phone IS NULL AND number IS NOT NULL;
+  UPDATE app_user SET fullname = username WHERE fullname IS NULL;
+  UPDATE app_user SET status = 1 WHERE status IS NULL OR status = 0;
+  
+  CREATE INDEX IF NOT EXISTS idx_app_user_last_activity 
+  ON app_user(last_activity_at);
+`;
+
+// OTP table
+const createUserOtp = `
+CREATE TABLE IF NOT EXISTS user_otp (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50),
+  phone VARCHAR(20) NOT NULL,
+  otp VARCHAR(6) NOT NULL,
+  status SMALLINT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_otp_phone ON user_otp(phone);
+CREATE INDEX IF NOT EXISTS idx_user_otp_created ON user_otp(created_at);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -432,4 +508,8 @@ module.exports = {
   createUserFlippedCards,
   createLeads,
   createScheduledMessages,
+  alterAppUser,
+  createUserOtp,
+  createNotificationAnalytics,
+  createOtaUpdateLog,
 };

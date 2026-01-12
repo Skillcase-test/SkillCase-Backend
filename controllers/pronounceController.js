@@ -58,8 +58,6 @@ async function asses(req, res) {
             pronunciationScore: assessment.pronunciationScore,
           };
 
-          console.log("German Pronunciation Assessment:", finalResult);
-
           fs.unlinkSync(audioPath);
 
           return res.json({

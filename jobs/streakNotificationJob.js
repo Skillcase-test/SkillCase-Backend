@@ -37,8 +37,33 @@ async function getUsersWithoutStreak() {
   return result.rows.map((row) => row.fcm_token);
 }
 
+//Log Notifications
+async function logSentNotifications(tokens, notificationType) {
+  try {
+    const result = await pool.query(
+      `SELECT user_id FROM app_user WHERE fcm_token = ANY($1)`,
+      [tokens]
+    );
+    const userIds = result.rows.map((row) => row.user_id);
+    
+    if (userIds.length === 0) return;
+
+    const values = userIds.map((_, i) => 
+      `($${i * 2 + 1}, $${i * 2 + 2}, NOW())`
+    ).join(",");
+    
+    const params = userIds.flatMap(userId => [userId, notificationType]);
+    await pool.query(
+      `INSERT INTO notification_analytics (user_id, notification_type, sent_at)
+       VALUES ${values}`,
+      params
+    );
+  } catch (error) {
+    console.error("Error logging sent notifications:", error);
+  }
+}
 // Send push notification
-async function sendNotification(tokens, title, body) {
+async function sendNotification(tokens, title, body, notificationType) {
   if (tokens.length === 0) return;
 
   const message = {
@@ -47,12 +72,17 @@ async function sendNotification(tokens, title, body) {
     android: { priority: "high" },
     data: {
       deepLink: "/continue",
+      notificationType: notificationType,
+      sentAt: new Date().toISOString(),
     },
   };
 
   try {
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`Sent to ${response.successCount}/${tokens.length} devices`);
+
+    // Log Sent Notifications
+    await logSentNotifications(tokens, notificationType);
   } catch (err) {
     console.error("Notification error:", err);
   }
@@ -69,13 +99,13 @@ function initStreakNotificationJobs() {
       await sendNotification(
         tokens,
         "🎯 Start Your Day Strong!",
-        "Practice German today to keep your streak alive!"
+        "Practice German today to keep your streak alive!",
+        "morning_reminder"
       );
     },
     { timezone: "Asia/Kolkata" }
   );
-
-  // 8 PM IST - Evening reminder to users WITHOUT streak
+  // 8 PM IST - Evening reminder
   cron.schedule(
     "0 20 * * *",
     async () => {
@@ -83,13 +113,13 @@ function initStreakNotificationJobs() {
       const tokens = await getUsersWithoutStreak();
       await sendNotification(
         tokens,
-        "⏰ Dont Break Your Streak!",
-        "You havent practiced today. Just 5 minutes to keep your streak!"
+        "⏰ Don't Break Your Streak!",
+        "You haven't practiced today. Just 5 minutes to keep your streak!",
+        "evening_reminder"
       );
     },
     { timezone: "Asia/Kolkata" }
   );
-
   console.log("Streak notification jobs scheduled");
 }
 

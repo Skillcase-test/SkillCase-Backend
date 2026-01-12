@@ -33,7 +33,13 @@ async function signup(req, res) {
     );
 
     const token = jwt.sign(
-      { user_id: newId, username, role, user_prof_level: proficiency_level },
+      {
+        user_id: newId,
+        username,
+        role,
+        user_prof_level: proficiency_level,
+        onboarding_completed: false,
+      },
       config.JWT_SECRET_KEY,
       { expiresIn: "60d" }
     );
@@ -44,6 +50,7 @@ async function signup(req, res) {
         username,
         role,
         user_prof_level: proficiency_level,
+        onboarding_completed: false,
       },
       token,
     });
@@ -85,6 +92,7 @@ async function login(req, res) {
         username: user.username,
         role: user.role,
         user_prof_level: user.current_profeciency_level,
+        onboarding_completed: user.onboarding_completed,
       },
       config.JWT_SECRET_KEY,
       { expiresIn: "60d" }
@@ -96,6 +104,7 @@ async function login(req, res) {
         username: user.username,
         role: user.role,
         user_prof_level: user.current_profeciency_level,
+        onboarding_completed: user.onboarding_completed,
       },
       token,
     });
@@ -127,7 +136,12 @@ async function me(req, res) {
     const user = rows[0];
 
     res.status(200).json({
-      user: { user_id: user.user_id, username: user.username, role: user.role },
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        role: user.role,
+        onboarding_completed: user.onboarding_completed,
+      },
     });
   } catch (err) {
     console.error(err);
@@ -153,4 +167,96 @@ const saveFcmToken = async (req, res) => {
   }
 };
 
-module.exports = { login, signup, me, saveFcmToken };
+async function updateUserActivity(req, res) {
+  try {
+    const userId = req.user?.user_id;
+
+    if (!userId) {
+      return res.status(401).json({ msg: "Unauthorized" });
+    }
+
+    await pool.query(
+      `UPDATE app_user 
+       SET last_activity_at = NOW() 
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Error updating user activity:", error);
+    res.status(500).json({ error: "Failed to update activity" });
+  }
+}
+
+async function completeOnboarding(req, res) {
+  try {
+    const userId = req.user?.user_id;
+
+    if (!userId) {
+      return res.status(401).json({ msg: "Unauthorized" });
+    }
+
+    await pool.query(
+      `UPDATE app_user 
+       SET onboarding_completed = TRUE 
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    res.status(200).json({ success: true, message: "Onboarding completed" });
+  } catch (error) {
+    console.error("Error completing onboarding:", error);
+    res.status(500).json({ error: "Failed to complete onboarding" });
+  }
+}
+
+// GET Article Education Status
+async function getArticleEducation(req, res) {
+  const { user_id } = req.user;
+
+  try {
+    const result = await pool.query(
+      "SELECT article_education_complete FROM app_user WHERE user_id = $1",
+      [user_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    res.status(200).json({
+      complete: result.rows[0].article_education_complete || false,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Error fetching article education status" });
+  }
+}
+
+// POST Mark Article Education Complete
+async function completeArticleEducation(req, res) {
+  const { user_id } = req.user;
+
+  try {
+    await pool.query(
+      "UPDATE app_user SET article_education_complete = TRUE WHERE user_id = $1",
+      [user_id]
+    );
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Error updating article education status" });
+  }
+}
+
+module.exports = {
+  login,
+  signup,
+  me,
+  saveFcmToken,
+  completeOnboarding,
+  getArticleEducation,
+  completeArticleEducation,
+  updateUserActivity,
+};

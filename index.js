@@ -27,8 +27,11 @@ const updateRouter = require("./routes/otaUpdateRouter");
 const notificationRouter = require("./routes/notificationRouter");
 const leadRouter = require("./routes/leadRouter");
 
+const authRouter = require("./routes/authRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
+const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
 
 const {
   authMiddleware,
@@ -70,6 +73,7 @@ db.initDb(pool);
 
 initStreakNotificationJobs();
 initMessageSchedulerJob();
+startOtpCleanupJob();
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -79,6 +83,7 @@ app.get("/", (req, res) => {
   res.send("Skillcase Backend running!");
 });
 
+app.use("/api/auth", authRouter);
 app.use("/api/admin", authMiddleware, authorizeRole("admin"), adminRouter);
 app.use("/api/pronounce", authMiddleware, pronounceRouter);
 app.use("/api/practice", optionalAuth, practiceRouter);

@@ -23,6 +23,7 @@
     "csv-parser": "^3.2.0",
     "difflib": "^0.2.4",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.2.1",
     "firebase-admin": "^13.6.0",

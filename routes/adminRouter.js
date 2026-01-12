@@ -40,6 +40,11 @@ const {
   getConversationAnalytics,
   getUserDetailedHistory,
   getRecentActivity,
+  getActiveUsersNow,
+  getStreakLeaderboard,
+  getStreakStats,
+  getNotificationStats,
+  getNotificationSummary,
 } = require("../controllers/analyticsController");
 
 const { getAllAgreements } = require("../controllers/agreementController");
@@ -95,6 +100,14 @@ router.get("/analytics/pronounce-analytics", getPronounceAnalytics);
 router.get("/analytics/conversation-analytics", getConversationAnalytics);
 router.get("/analytics/user-history/:user_id", getUserDetailedHistory);
 router.get("/analytics/recent-activity", getRecentActivity);
+
+router.get("/analytics/active-users-now", getActiveUsersNow);
+
+router.get("/analytics/streak-leaderboard", getStreakLeaderboard);
+router.get("/analytics/streak-stats", getStreakStats);
+
+router.get("/analytics/notification-stats", getNotificationStats);
+router.get("/analytics/notification-summary", getNotificationSummary);
 
 router.get("/agreements", getAllAgreements);
 
