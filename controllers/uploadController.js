@@ -23,4 +23,29 @@ const uploadProfilePhoto = async (req, res) => {
     res.status(500).json({ error: "Failed to upload image" });
   }
 };
-module.exports = { uploadProfilePhoto };
+
+// Upload event cover image to Cloudinary
+const uploadEventImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "skillcase/event-covers",
+      transformation: [{ quality: "auto", fetch_format: "auto" }],
+    });
+
+    res.json({
+      success: true,
+      url: result.secure_url,
+      publicId: result.public_id,
+    });
+  } catch (error) {
+    console.error("Event image upload error:", error);
+    res.status(500).json({ error: "Failed to upload image" });
+  }
+};
+
+module.exports = { uploadProfilePhoto, uploadEventImage };

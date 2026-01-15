@@ -27,7 +27,7 @@ const getAllUserTokens = async () => {
 };
 
 const sendNotification = async (req, res) => {
-  const { userId, title, body } = req.body;
+  const { userId, title, body, deepLink } = req.body;
   try {
     const user = await getUserById(userId);
     if (!user || !user.fcm_token) {
@@ -37,6 +37,9 @@ const sendNotification = async (req, res) => {
       token: user.fcm_token,
       notification: { title, body },
       android: { priority: "high" },
+      data: {
+        deepLink: deepLink || "/continue",
+      },
     };
     await admin.messaging().send(message);
     res.json({ success: true });

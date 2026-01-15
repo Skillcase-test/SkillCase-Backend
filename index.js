@@ -29,9 +29,13 @@ const leadRouter = require("./routes/leadRouter");
 
 const authRouter = require("./routes/authRouter");
 
+const eventRouter = require("./routes/eventRouter");
+const eventAdminRouter = require("./routes/eventAdminRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
+const { initEventReminderJob } = require("./jobs/eventReminderJob");
 
 const {
   authMiddleware,
@@ -74,6 +78,7 @@ db.initDb(pool);
 initStreakNotificationJobs();
 initMessageSchedulerJob();
 startOtpCleanupJob();
+initEventReminderJob();
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -84,6 +89,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/admin/events", eventAdminRouter);
 app.use("/api/admin", authMiddleware, authorizeRole("admin"), adminRouter);
 app.use("/api/pronounce", authMiddleware, pronounceRouter);
 app.use("/api/practice", optionalAuth, practiceRouter);
@@ -127,6 +133,7 @@ app.use(
   notificationRouter
 );
 
+app.use("/api/events", eventRouter);
 app.use("/api/leads", leadRouter);
 
 app.listen(3000, () => {

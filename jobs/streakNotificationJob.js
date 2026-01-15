@@ -68,7 +68,13 @@ async function logSentNotifications(tokens, notificationType, sentTimestamp) {
 }
 
 // Send push notification
-async function sendNotification(tokens, title, body, notificationType) {
+async function sendNotification(
+  tokens,
+  title,
+  body,
+  notificationType,
+  deepLink = "/continue"
+) {
   if (tokens.length === 0) return;
 
   const sentTimestamp = new Date().toISOString();
@@ -78,7 +84,7 @@ async function sendNotification(tokens, title, body, notificationType) {
     notification: { title, body },
     android: { priority: "high" },
     data: {
-      deepLink: "/continue",
+      deepLink: deepLink,
       notificationType: notificationType,
       sentAt: sentTimestamp,
     },

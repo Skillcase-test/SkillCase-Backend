@@ -214,9 +214,62 @@ async function insertOrGetContact(userData) {
   };
 }
 
+// Insert event registrant as Inbound Lead
+async function insertEventRegistrant({
+  name,
+  email,
+  phone,
+  eventTitle,
+  registrationDate,
+}) {
+  console.log("[Bigin] Event registration - searching for contact...");
+
+  const searchResult = await searchContactByPhone(phone);
+
+  if (searchResult.exists) {
+    console.log("[Bigin] Contact already exists, ID:", searchResult.contact.id);
+    return { status: "exists", zohoId: searchResult.contact.id };
+  }
+
+  console.log("[Bigin] Creating new contact as Inbound Lead...");
+
+  const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+
+  const contactData = {
+    data: [
+      {
+        Last_Name: name || "User",
+        First_Name: "",
+        Account_Name: "Skillcase",
+        Mobile: normalizedPhone,
+        Email: email || "",
+        Tag: [{ name: "Inbound Lead" }],
+        Description: `Event Registration: ${eventTitle}\nRegistered: ${new Date(
+          registrationDate
+        ).toLocaleString("en-IN")}`,
+      },
+    ],
+  };
+
+  try {
+    const response = await biginRequest("POST", "/Contacts", contactData);
+
+    if (response.data && response.data[0]) {
+      console.log("[Bigin] Contact created:", response.data[0].status);
+      return { status: "created", zohoId: response.data[0].details.id };
+    }
+
+    return { status: "error", error: "No ID returned" };
+  } catch (error) {
+    console.error("[Bigin] Create error:", error.message);
+    return { status: "error", error: error.message };
+  }
+}
+
 module.exports = {
   searchContactByPhone,
   createContact,
   insertOrGetContact,
   refreshToken,
+  insertEventRegistrant,
 };

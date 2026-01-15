@@ -481,6 +481,86 @@ CREATE INDEX IF NOT EXISTS idx_user_otp_phone ON user_otp(phone);
 CREATE INDEX IF NOT EXISTS idx_user_otp_created ON user_otp(created_at);
 `;
 
+// Event management tables
+const createEvent = `
+CREATE TABLE IF NOT EXISTS event (
+  event_id SERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) NOT NULL UNIQUE,
+  description TEXT,
+  cover_image_url TEXT,
+  is_featured BOOLEAN DEFAULT FALSE,
+  meeting_link TEXT NOT NULL,
+  event_type VARCHAR(50) NOT NULL CHECK (event_type IN ('one_time', 'recurring')),
+  start_datetime TIMESTAMP,
+  end_datetime TIMESTAMP,
+  timezone VARCHAR(50),
+  recurrence_rule TEXT,
+  recurrence_timezone VARCHAR(50),
+  created_by VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  is_active BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_event_slug ON event(slug);
+CREATE INDEX IF NOT EXISTS idx_event_featured ON event(is_featured);
+CREATE INDEX IF NOT EXISTS idx_event_active ON event(is_active);
+`;
+
+const createEventRegistration = `
+CREATE TABLE IF NOT EXISTS event_registration (
+  registration_id SERIAL PRIMARY KEY,
+  event_id INT NOT NULL,
+  user_id VARCHAR(50),
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  phone VARCHAR(50) NOT NULL,
+  registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  confirmation_sent BOOLEAN DEFAULT FALSE,
+  FOREIGN KEY (event_id) REFERENCES event(event_id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_registration_event ON event_registration(event_id);
+CREATE INDEX IF NOT EXISTS idx_registration_email ON event_registration(email);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_registration ON event_registration(event_id, email);
+`;
+
+const createEventSubscription = `
+CREATE TABLE IF NOT EXISTS event_subscription (
+  subscription_id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  subscribed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  is_active BOOLEAN DEFAULT TRUE,
+  unsubscribe_token VARCHAR(255) UNIQUE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_subscription_email ON event_subscription(email);
+CREATE INDEX IF NOT EXISTS idx_subscription_active ON event_subscription(is_active);
+`;
+
+const alterTable = `
+ALTER TABLE event_registration ADD COLUMN IF NOT EXISTS instance_date TIMESTAMP;
+ALTER TABLE event_registration ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT FALSE;
+ALTER TABLE event_registration ALTER COLUMN registered_at DROP DEFAULT;
+-- Add new default with IST timezone
+ALTER TABLE event_registration ALTER COLUMN registered_at SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata');
+CREATE INDEX IF NOT EXISTS idx_registration_reminder ON event_registration(reminder_sent, instance_date);
+`;
+
+const createEventOverride = `
+CREATE TABLE IF NOT EXISTS event_instance_override (
+  override_id SERIAL PRIMARY KEY,
+  event_id INT NOT NULL,
+  instance_date DATE NOT NULL,
+  custom_start_time TIME,
+  custom_end_time TIME,
+  is_cancelled BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(event_id, instance_date),
+  FOREIGN KEY (event_id) REFERENCES event(event_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_override_event_date ON event_instance_override(event_id, instance_date);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -512,4 +592,9 @@ module.exports = {
   createUserOtp,
   createNotificationAnalytics,
   createOtaUpdateLog,
+  createEvent,
+  createEventRegistration,
+  createEventSubscription,
+  alterTable,
+  createEventOverride,
 };

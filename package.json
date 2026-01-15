@@ -27,6 +27,7 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.2.1",
     "firebase-admin": "^13.6.0",
+    "ics": "^3.8.1",
     "jsonwebtoken": "^9.0.2",
     "lodash": "^4.17.21",
     "microsoft-cognitiveservices-speech-sdk": "^1.46.0",
@@ -37,6 +38,7 @@
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.2",
     "pg": "^8.16.3",
+    "rrule": "^2.8.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

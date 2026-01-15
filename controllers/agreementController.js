@@ -1,4 +1,4 @@
-const sendConfirmationMail = require("../services/emailService");
+const { sendConfirmationMail } = require("../services/emailService");
 const generateAgreementPdf = require("../services/pdfService");
 const { pool } = require("../util/db");
 
