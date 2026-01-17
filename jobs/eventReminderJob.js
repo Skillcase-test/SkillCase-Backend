@@ -39,7 +39,7 @@ async function processEventReminders() {
   WHERE 
     effective_event_time > NOW()
     AND effective_event_time <= NOW() + INTERVAL '1 hour'
-    AND effective_event_time - INTERVAL '1 hour' > registered_at
+    AND effective_event_time - INTERVAL '1 hour' > (registered_at - INTERVAL '5 hours 30 minutes')
 `;
 
     const result = await pool.query(query);

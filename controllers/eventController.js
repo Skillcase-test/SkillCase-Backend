@@ -686,11 +686,13 @@ async function registerForEvent(req, res) {
           name,
           eventTitle: event.title,
           eventDate: eventDate.toLocaleDateString("en-IN", {
+            timeZone: "Asia/Kolkata",
             weekday: "long",
             day: "numeric",
             month: "short",
           }),
           eventTime: eventDate.toLocaleTimeString("en-IN", {
+            timeZone: "Asia/Kolkata",
             hour: "numeric",
             minute: "2-digit",
             hour12: true,
