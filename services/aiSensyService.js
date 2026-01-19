@@ -62,7 +62,7 @@ async function sendWhatsAppMessage(phone, templateId, params) {
       },
       {
         headers: { "Content-Type": "application/json" },
-      }
+      },
     );
 
     console.log("AiSensy response:", response.data);
@@ -89,10 +89,16 @@ async function sendRegistrationConfirmation({
 }
 
 async function sendEventReminder({ phone, name, eventTitle, meetingLink }) {
+  let meetingCode = meetingLink;
+  if (meetingLink && meetingLink.includes("meet.google.com/")) {
+    meetingCode = meetingLink.split("meet.google.com/")[1];
+  }
+
   return sendWhatsAppMessage(phone, TEMPLATES.EVENT_REMINDER, {
-    name,
-    eventTitle,
-    meetingLink,
+    name, // {{1}} - Name in message
+    eventTitle, // {{2}} - Event title
+    meetingLink, // {{3}} - Full link shown in message body
+    meetingCode, // {{4}} - Just code for button (AiSensy adds https://meet.google.com/)
   });
 }
 
