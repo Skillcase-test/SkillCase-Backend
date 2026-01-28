@@ -82,9 +82,9 @@ function initEventReminderJob() {
   console.log("[EventReminder] Initializing job scheduler...");
 
   // Run every 15 minutes
-  cron.schedule("*/15 * * * *", processEventReminders);
+  cron.schedule("*/45 * * * *", processEventReminders);
 
-  console.log("[EventReminder] Job scheduled to run every 15 minutes");
+  console.log("[EventReminder] Job scheduled to run every 45 minutes");
 }
 
 module.exports = { initEventReminderJob, processEventReminders };

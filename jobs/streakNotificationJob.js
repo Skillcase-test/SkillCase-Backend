@@ -111,8 +111,8 @@ function initStreakNotificationJobs() {
       const tokens = await getAllUserTokens();
       await sendNotification(
         tokens,
-        "🎯 Start Your Day Strong!",
-        "Practice German today to keep your streak alive!",
+        "✨ Consistency Wins",
+        "Practice German today and stay on track.",
         "morning_reminder"
       );
     },
@@ -126,8 +126,8 @@ function initStreakNotificationJobs() {
       const tokens = await getUsersWithoutStreak();
       await sendNotification(
         tokens,
-        "⏰ Don't Break Your Streak!",
-        "You haven't practiced today. Just 5 minutes to keep your streak!",
+        "🔥 Streak at Risk",
+        "Just 2 minutes of German keeps your progress intact.",
         "evening_reminder"
       );
     },
