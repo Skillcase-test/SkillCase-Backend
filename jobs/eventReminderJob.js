@@ -5,6 +5,21 @@ const { sendEventReminder } = require("../services/aiSensyService");
 async function processEventReminders() {
   console.log("[EventReminder] Checking for pending reminders...");
   try {
+    // Early exit: Check if any reminders are pending before running expensive query
+    const quickCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM event_registration 
+        WHERE reminder_sent = FALSE 
+        AND instance_date > NOW() 
+        AND instance_date <= NOW() + INTERVAL '2 hours'
+      ) AS has_pending
+    `);
+
+    if (!quickCheck.rows[0].has_pending) {
+      console.log("[EventReminder] No pending reminders, skipping...");
+      return;
+    }
+
     // Find registrations where:
     // 1. instance_date is within the next 1 hour
     // 2. reminder_sent is false
@@ -48,6 +63,9 @@ async function processEventReminders() {
       `[EventReminder] Found ${result.rows.length} reminders to send`
     );
 
+    // Track successfully sent reminders for batch update
+    const sentIds = [];
+
     for (const reg of result.rows) {
       try {
         await sendEventReminder({
@@ -57,11 +75,7 @@ async function processEventReminders() {
           meetingLink: reg.meeting_link,
         });
 
-        // Mark reminder as sent
-        await pool.query(
-          "UPDATE event_registration SET reminder_sent = TRUE WHERE registration_id = $1",
-          [reg.registration_id]
-        );
+        sentIds.push(reg.registration_id);
 
         console.log(
           `[EventReminder] Sent reminder to ${reg.name} for ${reg.event_title}`
@@ -73,6 +87,17 @@ async function processEventReminders() {
         );
       }
     }
+
+    // Batch update: Mark all sent reminders in a single query
+    if (sentIds.length > 0) {
+      await pool.query(
+        "UPDATE event_registration SET reminder_sent = TRUE WHERE registration_id = ANY($1::int[])",
+        [sentIds]
+      );
+      console.log(
+        `[EventReminder] Batch updated ${sentIds.length} registrations as sent`
+      );
+    }
   } catch (err) {
     console.error("[EventReminder] Job failed:", err);
   }
@@ -81,10 +106,12 @@ async function processEventReminders() {
 function initEventReminderJob() {
   console.log("[EventReminder] Initializing job scheduler...");
 
-  // Run every 15 minutes
-  cron.schedule("*/45 * * * *", processEventReminders);
+  // Run at 5, 6, 7, 8, 9, 10 PM IST (11:30, 12:30, 13:30, 14:30, 15:30, 16:30 UTC)
+  cron.schedule("30 11-16 * * *", processEventReminders);
 
-  console.log("[EventReminder] Job scheduled to run every 45 minutes");
+  console.log(
+    "[EventReminder] Job scheduled to run hourly from 5 PM to 10 PM IST"
+  );
 }
 
 module.exports = { initEventReminderJob, processEventReminders };
