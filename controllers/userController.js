@@ -7,10 +7,25 @@ const { v4: uuidv4 } = require("uuid");
 // SIGNUP
 async function signup(req, res) {
   const { number, username, password, proficiency_level } = req.body;
+
+  // Map B1 and above levels to A2 (only A1 and A2 are currently supported)
+  let finalProfLevel = proficiency_level;
+  if (proficiency_level) {
+    const upperLevel = proficiency_level.toUpperCase();
+    if (
+      upperLevel === "B1" ||
+      upperLevel === "B2" ||
+      upperLevel === "C1" ||
+      upperLevel === "C2"
+    ) {
+      finalProfLevel = "A2";
+    }
+  }
+
   try {
     const result = await pool.query(
       "SELECT * FROM app_user WHERE number = $1",
-      [number]
+      [number],
     );
     const rows = result.rows;
 
@@ -29,7 +44,7 @@ async function signup(req, res) {
   try {
     await pool.query(
       "INSERT INTO app_user (user_id, username, password, role,current_profeciency_level,number) VALUES ($1, $2, $3, $4,$5,$6)",
-      [newId, username, hashed, role, proficiency_level, number]
+      [newId, username, hashed, role, finalProfLevel, number],
     );
 
     const token = jwt.sign(
@@ -37,11 +52,11 @@ async function signup(req, res) {
         user_id: newId,
         username,
         role,
-        user_prof_level: proficiency_level,
+        user_prof_level: finalProfLevel,
         onboarding_completed: false,
       },
       config.JWT_SECRET_KEY,
-      { expiresIn: "60d" }
+      { expiresIn: "60d" },
     );
 
     res.status(200).json({
@@ -49,7 +64,7 @@ async function signup(req, res) {
         user_id: newId,
         username,
         role,
-        user_prof_level: proficiency_level,
+        user_prof_level: finalProfLevel,
         onboarding_completed: false,
       },
       token,
@@ -71,7 +86,7 @@ async function login(req, res) {
   try {
     const result = await pool.query(
       "SELECT * FROM app_user WHERE number = $1",
-      [number]
+      [number],
     );
     const rows = result.rows;
 
@@ -95,7 +110,7 @@ async function login(req, res) {
         onboarding_completed: user.onboarding_completed,
       },
       config.JWT_SECRET_KEY,
-      { expiresIn: "60d" }
+      { expiresIn: "60d" },
     );
 
     res.status(200).json({
@@ -125,7 +140,7 @@ async function me(req, res) {
   try {
     const result = await pool.query(
       "SELECT * FROM app_user WHERE user_id = $1",
-      [user_id]
+      [user_id],
     );
     const rows = result.rows;
 
@@ -140,7 +155,9 @@ async function me(req, res) {
         user_id: user.user_id,
         username: user.username,
         role: user.role,
+        user_prof_level: user.current_profeciency_level,
         onboarding_completed: user.onboarding_completed,
+        a2_onboarding_completed: user.a2_onboarding_completed || false,
       },
     });
   } catch (err) {
@@ -155,10 +172,12 @@ const saveFcmToken = async (req, res) => {
     const userId = req.user.user_id;
     const { fcmToken } = req.body;
 
-    await pool.query("UPDATE app_user SET fcm_token = $1 WHERE user_id = $2", [
-      fcmToken,
-      userId,
-    ]);
+    // When FCM token is saved, it means user is using the mobile app
+    // So we also update signup_source to 'app' to correctly identify app users
+    await pool.query(
+      "UPDATE app_user SET fcm_token = $1, signup_source = 'app' WHERE user_id = $2",
+      [fcmToken, userId],
+    );
 
     res.json({ success: true });
   } catch (error) {
@@ -179,7 +198,7 @@ async function updateUserActivity(req, res) {
       `UPDATE app_user 
        SET last_activity_at = NOW() 
        WHERE user_id = $1`,
-      [userId]
+      [userId],
     );
 
     res.status(200).json({ success: true });
@@ -198,9 +217,14 @@ async function updateAppVersion(req, res) {
       return res.status(400).json({ msg: "Missing required fields" });
     }
 
+    // Also update signup_source to 'app' when app version is set
+    // This ensures users who registered on web but now use app are correctly identified
     await pool.query(
-      `UPDATE app_user SET app_version = $1 WHERE user_id = $2`,
-      [appVersion, userId]
+      `UPDATE app_user 
+       SET app_version = $1, 
+           signup_source = 'app'
+       WHERE user_id = $2`,
+      [appVersion, userId],
     );
 
     res.status(200).json({ success: true });
@@ -222,7 +246,7 @@ async function completeOnboarding(req, res) {
       `UPDATE app_user 
        SET onboarding_completed = TRUE 
        WHERE user_id = $1`,
-      [userId]
+      [userId],
     );
 
     res.status(200).json({ success: true, message: "Onboarding completed" });
@@ -239,7 +263,7 @@ async function getArticleEducation(req, res) {
   try {
     const result = await pool.query(
       "SELECT article_education_complete FROM app_user WHERE user_id = $1",
-      [user_id]
+      [user_id],
     );
 
     if (result.rows.length === 0) {
@@ -262,12 +286,27 @@ async function completeArticleEducation(req, res) {
   try {
     await pool.query(
       "UPDATE app_user SET article_education_complete = TRUE WHERE user_id = $1",
-      [user_id]
+      [user_id],
     );
     res.status(200).json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Error updating article education status" });
+  }
+}
+
+async function completeA2Onboarding(req, res) {
+  const { user_id } = req.user;
+
+  try {
+    await pool.query(
+      "UPDATE app_user SET a2_onboarding_completed = TRUE WHERE user_id = $1",
+      [user_id],
+    );
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Error updating A2 onboarding status" });
   }
 }
 
@@ -281,4 +320,5 @@ module.exports = {
   updateAppVersion,
   getArticleEducation,
   completeArticleEducation,
+  completeA2Onboarding,
 };

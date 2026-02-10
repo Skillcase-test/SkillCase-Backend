@@ -37,7 +37,7 @@ async function getStreakData(req, res) {
       FROM (SELECT 1) dummy
       LEFT JOIN user_streak s ON s.user_id = $1
       LEFT JOIN user_daily_activity a ON a.user_id = $1 AND a.activity_date = $2`,
-      [userId, today]
+      [userId, today],
     );
 
     let currentStreak = result.rows[0]?.current_streak ?? 0;
@@ -51,7 +51,7 @@ async function getStreakData(req, res) {
       await pool.query(
         `INSERT INTO user_streak (user_id, current_streak, longest_streak) VALUES ($1, 0, 0)
          ON CONFLICT (user_id) DO NOTHING`,
-        [userId]
+        [userId],
       );
     }
 
@@ -62,7 +62,7 @@ async function getStreakData(req, res) {
         currentStreak = 0;
         await pool.query(
           `UPDATE user_streak SET current_streak = 0, streak_updated_at = CURRENT_TIMESTAMP WHERE user_id = $1`,
-          [userId]
+          [userId],
         );
       }
     }
@@ -100,7 +100,7 @@ async function logFlashcardActivity(req, res) {
          flashcards_practiced = user_daily_activity.flashcards_practiced + 1,
          updated_at = CURRENT_TIMESTAMP
        RETURNING flashcards_practiced, daily_goal_met`,
-      [userId, today]
+      [userId, today],
     );
 
     const todayFlashcards = activityResult.rows[0].flashcards_practiced;
@@ -113,14 +113,14 @@ async function logFlashcardActivity(req, res) {
       // Mark goal as met
       await pool.query(
         `UPDATE user_daily_activity SET daily_goal_met = true WHERE user_id = $1 AND activity_date = $2`,
-        [userId, today]
+        [userId, today],
       );
       dailyGoalMet = true;
 
       // Update streak
       const streakResult = await pool.query(
         `SELECT * FROM user_streak WHERE user_id = $1`,
-        [userId]
+        [userId],
       );
       let longestStreak = 0;
       if (streakResult.rows.length === 0) {
@@ -130,7 +130,7 @@ async function logFlashcardActivity(req, res) {
         await pool.query(
           `INSERT INTO user_streak (user_id, current_streak, longest_streak, last_goal_date)
            VALUES ($1, 1, 1, $2)`,
-          [userId, today]
+          [userId, today],
         );
       } else {
         const lastGoalDate = streakResult.rows[0].last_goal_date;
@@ -165,7 +165,7 @@ async function logFlashcardActivity(req, res) {
           `UPDATE user_streak 
            SET current_streak = $1, longest_streak = $2, last_goal_date = $3, streak_updated_at = CURRENT_TIMESTAMP
            WHERE user_id = $4`,
-          [currentStreak, longestStreak, today, userId]
+          [currentStreak, longestStreak, today, userId],
         );
       }
       streakUpdated = true;
@@ -187,16 +187,57 @@ async function logFlashcardActivity(req, res) {
 async function getLastChapterProgress(req, res) {
   try {
     const userId = req.user?.user_id;
+
     if (!userId) {
       return res.status(400).json({ msg: "User not authenticated" });
     }
 
-    // Single optimized query: Find first chapter with incomplete cards
+    // Get user's proficiency level
+    const userResult = await pool.query(
+      `SELECT current_profeciency_level FROM app_user WHERE user_id = $1`,
+      [userId],
+    );
+
+    const profLevel = userResult.rows[0]?.current_profeciency_level || "A1";
+
+    // A2 User - Query A2 flashcard progress from a2_flashcard_progress table
+    if (profLevel.toUpperCase() === "A2") {
+      const a2Result = await pool.query(
+        `SELECT 
+          s.set_id,
+          s.set_name,
+          s.chapter_id,
+          (SELECT COUNT(*) FROM a2_flashcard WHERE set_id = s.set_id) as total_cards,
+          COALESCE(p.current_index, 0) as current_index
+        FROM a2_flashcard_set s
+        LEFT JOIN a2_flashcard_progress p ON p.set_id = s.set_id AND p.user_id = $1
+        ORDER BY s.set_id ASC`,
+        [userId],
+      );
+
+      // Find first incomplete set
+      const incompleteSet = a2Result.rows.find(
+        (s) => s.current_index < s.total_cards,
+      );
+
+      if (!incompleteSet) {
+        return res.status(200).json({ hasProgress: false });
+      }
+
+      return res.status(200).json({
+        hasProgress: true,
+        chapterId: incompleteSet.chapter_id,
+        chapterName: incompleteSet.set_name,
+        currentIndex: incompleteSet.current_index,
+        totalCards: incompleteSet.total_cards,
+        proficiencyLevel: "A2",
+        isA2: true,
+      });
+    }
+
+    // A1 User - Original query
     const result = await pool.query(
-      `WITH user_level AS (
-        SELECT current_profeciency_level FROM app_user WHERE user_id = $1
-      ),
-      chapter_stats AS (
+      `WITH chapter_stats AS (
         SELECT 
           f.set_id,
           f.set_name,
@@ -204,29 +245,26 @@ async function getLastChapterProgress(req, res) {
           f.proficiency_level,
           COALESCE(fc.flipped_count, 0) as flipped_count
         FROM flash_card_set f
-        CROSS JOIN user_level ul
         LEFT JOIN (
           SELECT set_id, COUNT(*) as flipped_count
           FROM user_flipped_cards
           WHERE user_id = $1
           GROUP BY set_id
         ) fc ON f.set_id = fc.set_id
-        WHERE f.proficiency_level = ul.current_profeciency_level
+        WHERE f.proficiency_level = $2
       )
       SELECT * FROM chapter_stats
       WHERE flipped_count < number_of_cards
       ORDER BY (regexp_replace(set_name, '[^0-9]', '', 'g'))::int ASC NULLS LAST
       LIMIT 1`,
-      [userId]
+      [userId, profLevel],
     );
 
     if (result.rows.length === 0) {
       return res.status(200).json({ hasProgress: false });
     }
-
     const chapter = result.rows[0];
-    
-    // Get the first unflipped card index for this specific chapter
+
     const unflippedResult = await pool.query(
       `SELECT MIN(idx) as first_unflipped
        FROM generate_series(0, $1 - 1) as idx
@@ -234,7 +272,7 @@ async function getLastChapterProgress(req, res) {
          SELECT card_index FROM user_flipped_cards 
          WHERE user_id = $2 AND set_id = $3
        )`,
-      [chapter.number_of_cards, userId, chapter.set_id]
+      [chapter.number_of_cards, userId, chapter.set_id],
     );
 
     const firstUnflipped = unflippedResult.rows[0]?.first_unflipped ?? 0;
@@ -246,6 +284,7 @@ async function getLastChapterProgress(req, res) {
       currentIndex: firstUnflipped,
       totalCards: chapter.number_of_cards,
       proficiencyLevel: chapter.proficiency_level,
+      isA2: false,
     });
   } catch (err) {
     console.error("Error fetching last chapter:", err);
@@ -265,7 +304,7 @@ async function saveFlippedCard(req, res) {
       `INSERT INTO user_flipped_cards (user_id, set_id, card_index)
        VALUES ($1, $2, $3)
        ON CONFLICT (user_id, set_id, card_index) DO NOTHING`,
-      [userId, set_id, card_index]
+      [userId, set_id, card_index],
     );
     res.status(200).json({ msg: "Flipped card saved" });
   } catch (err) {

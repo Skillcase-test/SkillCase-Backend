@@ -25,7 +25,7 @@ async function getUserAnalytics(req, res) {
             ORDER BY completion_rate DESC
             LIMIT $1 OFFSET $2
             `,
-      [limit, offset]
+      [limit, offset],
     );
     const totalRecords =
       result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
@@ -63,9 +63,13 @@ async function refreshAnalytics(req, res) {
 async function getNewUserAnalytics(req, res) {
   try {
     const result = await pool.query(`
-     SELECT *
-FROM new_user_analytics
-      `);
+      SELECT user_id, username, fullname, email, phone,
+        current_profeciency_level, signup_source, created_at
+      FROM app_user
+      WHERE created_at >= NOW() - INTERVAL '30 days'
+        AND role = 'user'
+      ORDER BY created_at DESC
+    `);
     res.status(200).json({ count: result.rows.length, result: result.rows });
   } catch (err) {
     console.error(err);
@@ -112,8 +116,19 @@ async function getPreviousMonthTestCompletionRate(req, res) {
 
 async function getTotalUsers(req, res) {
   try {
-    const result = await pool.query(`SELECT count(*) as count FROM app_user`);
-    res.status(200).json({ count: result.rows[0].count });
+    const result = await pool.query(`
+      SELECT
+        COUNT(*) as total,
+        COUNT(CASE WHEN UPPER(current_profeciency_level) = 'A1' OR current_profeciency_level IS NULL THEN 1 END) as a1_count,
+        COUNT(CASE WHEN UPPER(current_profeciency_level) = 'A2' THEN 1 END) as a2_count
+      FROM app_user
+      WHERE role = 'user'
+    `);
+    res.status(200).json({
+      count: result.rows[0].total,
+      a1Count: result.rows[0].a1_count,
+      a2Count: result.rows[0].a2_count,
+    });
   } catch (err) {
     console.log(err);
     res.status(500).send("error fecthing results from db");
@@ -123,7 +138,7 @@ async function getTotalUsers(req, res) {
 async function getStoryAnalytics(req, res) {
   try {
     const result = await pool.query(
-      `SELECT * FROM story_analytics ORDER BY total_readers DESC`
+      `SELECT * FROM story_analytics ORDER BY total_readers DESC`,
     );
     res.status(200).json(result.rows);
   } catch (error) {
@@ -135,7 +150,7 @@ async function getStoryAnalytics(req, res) {
 async function getPronounceAnalytics(req, res) {
   try {
     const result = await pool.query(
-      `SELECT * FROM pronounce_analytics ORDER BY total_users DESC`
+      `SELECT * FROM pronounce_analytics ORDER BY total_users DESC`,
     );
     res.status(200).json(result.rows);
   } catch (error) {
@@ -147,7 +162,7 @@ async function getPronounceAnalytics(req, res) {
 async function getConversationAnalytics(req, res) {
   try {
     const result = await pool.query(
-      `SELECT * FROM conversation_analytics ORDER BY total_listeners DESC`
+      `SELECT * FROM conversation_analytics ORDER BY total_listeners DESC`,
     );
 
     res.status(200).json(result.rows);
@@ -213,9 +228,87 @@ async function getUserDetailedHistory(req, res) {
       FROM user_story_progress usp
       JOIN story s ON usp.story_id = s.story_id
       WHERE usp.user_id = $1
+      UNION ALL
+      SELECT 
+        'a2_flashcard' as activity_type,
+        afp.set_id as item_id,
+        afs.set_name as item_name,
+        'A2' as proficiency_level,
+        afp.is_completed as completed,
+        afp.current_index,
+        NULL as current_order,
+        afp.last_reviewed as last_accessed
+      FROM a2_flashcard_progress afp
+      JOIN a2_flashcard_set afs ON afp.set_id = afs.set_id
+      WHERE afp.user_id::text = $1
+      UNION ALL
+      SELECT 
+        'a2_grammar' as activity_type,
+        agp.topic_id as item_id,
+        agt.name as item_name,
+        'A2' as proficiency_level,
+        agp.is_completed as completed,
+        agp.current_question_index as current_index,
+        NULL as current_order,
+        agp.last_practiced as last_accessed
+      FROM a2_grammar_progress agp
+      JOIN a2_grammar_topic agt ON agp.topic_id = agt.id
+      WHERE agp.user_id::text = $1
+      UNION ALL
+      SELECT 
+        'a2_listening' as activity_type,
+        alp.content_id as item_id,
+        alc.title as item_name,
+        'A2' as proficiency_level,
+        alp.is_completed as completed,
+        alp.current_question_index as current_index,
+        NULL as current_order,
+        alp.last_practiced as last_accessed
+      FROM a2_listening_progress alp
+      JOIN a2_listening_content alc ON alp.content_id = alc.id
+      WHERE alp.user_id::text = $1
+      UNION ALL
+      SELECT 
+        'a2_speaking' as activity_type,
+        asp.chapter_id as item_id,
+        ac.chapter_name as item_name,
+        'A2' as proficiency_level,
+        asp.is_completed as completed,
+        asp.current_content_index as current_index,
+        NULL as current_order,
+        asp.last_practiced as last_accessed
+      FROM a2_speaking_progress asp
+      JOIN a2_chapter ac ON asp.chapter_id = ac.id
+      WHERE asp.user_id::text = $1
+      UNION ALL
+      SELECT 
+        'a2_reading' as activity_type,
+        arp.content_id as item_id,
+        arc.title as item_name,
+        'A2' as proficiency_level,
+        arp.is_completed as completed,
+        arp.current_question_index as current_index,
+        NULL as current_order,
+        arp.last_practiced as last_accessed
+      FROM a2_reading_progress arp
+      JOIN a2_reading_content arc ON arp.content_id = arc.id
+      WHERE arp.user_id::text = $1
+      UNION ALL
+      SELECT 
+        'a2_test' as activity_type,
+        atp.topic_id as item_id,
+        att.name as item_name,
+        'A2' as proficiency_level,
+        atp.is_fully_completed as completed,
+        atp.current_level as current_index,
+        NULL as current_order,
+        atp.last_attempted as last_accessed
+      FROM a2_test_progress atp
+      JOIN a2_test_topic att ON atp.topic_id = att.id
+      WHERE atp.user_id::text = $1
       ORDER BY last_accessed DESC NULLS LAST
     `,
-      [user_id]
+      [user_id],
     );
 
     res.status(200).json(result.rows);
@@ -246,6 +339,7 @@ async function getRecentActivity(req, res) {
         WHERE ucs.test_status = true
           AND ucs.modified_at >= $1::timestamp
           AND ucs.modified_at <= $2::timestamp
+          AND u.role = 'user'
         GROUP BY u.user_id, u.username, u.current_profeciency_level
         
         UNION
@@ -261,6 +355,7 @@ async function getRecentActivity(req, res) {
         WHERE upp.completed = true
           AND upp.last_accessed >= $1::timestamp
           AND upp.last_accessed <= $2::timestamp
+          AND u.role = 'user'
         GROUP BY u.user_id, u.username, u.current_profeciency_level
         
         UNION
@@ -276,6 +371,7 @@ async function getRecentActivity(req, res) {
         WHERE ucp.completed = true
           AND ucp.last_accessed >= $1::timestamp
           AND ucp.last_accessed <= $2::timestamp
+          AND u.role = 'user'
         GROUP BY u.user_id, u.username, u.current_profeciency_level
         
         UNION
@@ -291,6 +387,103 @@ async function getRecentActivity(req, res) {
         WHERE usp.completed = true
           AND usp.completed_at >= $1::timestamp
           AND usp.completed_at <= $2::timestamp
+          AND u.role = 'user'
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- A2 Flashcards
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(afp.last_reviewed) as last_activity
+        FROM a2_flashcard_progress afp
+        JOIN app_user u ON afp.user_id::text = u.user_id
+        WHERE afp.is_completed = true
+          AND afp.last_reviewed >= $1::timestamp
+          AND afp.last_reviewed <= $2::timestamp
+          AND u.role = 'user'
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- A2 Grammar
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(agp.last_practiced) as last_activity
+        FROM a2_grammar_progress agp
+        JOIN app_user u ON agp.user_id::text = u.user_id
+        WHERE agp.is_completed = true
+          AND agp.last_practiced >= $1::timestamp
+          AND agp.last_practiced <= $2::timestamp
+          AND u.role = 'user'
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- A2 Listening
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(alp.last_practiced) as last_activity
+        FROM a2_listening_progress alp
+        JOIN app_user u ON alp.user_id::text = u.user_id
+        WHERE alp.is_completed = true
+          AND alp.last_practiced >= $1::timestamp
+          AND alp.last_practiced <= $2::timestamp
+          AND u.role = 'user'
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- A2 Speaking
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(asp.last_practiced) as last_activity
+        FROM a2_speaking_progress asp
+        JOIN app_user u ON asp.user_id::text = u.user_id
+        WHERE asp.is_completed = true
+          AND asp.last_practiced >= $1::timestamp
+          AND asp.last_practiced <= $2::timestamp
+          AND u.role = 'user'
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- A2 Reading
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(arp.last_practiced) as last_activity
+        FROM a2_reading_progress arp
+        JOIN app_user u ON arp.user_id::text = u.user_id
+        WHERE arp.is_completed = true
+          AND arp.last_practiced >= $1::timestamp
+          AND arp.last_practiced <= $2::timestamp
+          AND u.role = 'user'
+        GROUP BY u.user_id, u.username, u.current_profeciency_level
+        
+        UNION
+        
+        -- A2 Test
+        SELECT DISTINCT
+          u.user_id,
+          u.username,
+          u.current_profeciency_level as proficiency_level,
+          MAX(atp.last_attempted) as last_activity
+        FROM a2_test_progress atp
+        JOIN app_user u ON atp.user_id::text = u.user_id
+        WHERE atp.is_fully_completed = true
+          AND atp.last_attempted >= $1::timestamp
+          AND atp.last_attempted <= $2::timestamp
+          AND u.role = 'user'
         GROUP BY u.user_id, u.username, u.current_profeciency_level
       )
       SELECT 
@@ -302,7 +495,7 @@ async function getRecentActivity(req, res) {
       GROUP BY user_id, username, proficiency_level
       ORDER BY last_activity DESC
       `,
-      [startDate, endDate]
+      [startDate, endDate],
     );
     res.status(200).json(result.rows);
   } catch (error) {
@@ -313,17 +506,42 @@ async function getRecentActivity(req, res) {
 
 async function getActiveUsersNow(req, res) {
   try {
-    // Users active in the last 5 minutes
-    const result = await pool.query(`
-      SELECT COUNT(*) as active_count
+    // Get counts with web/app breakdown
+    const countResult = await pool.query(`
+      SELECT 
+        COUNT(*) as active_count,
+        COUNT(CASE WHEN signup_source = 'web' THEN 1 END) as web_users,
+        COUNT(CASE WHEN signup_source = 'app' THEN 1 END) as app_users
       FROM app_user
       WHERE last_activity_at > NOW() - INTERVAL '5 minutes'
+        AND role = 'user'
     `);
 
-    const activeCount = parseInt(result.rows[0].active_count);
+    // Get list of active users (limited to 20 most recent)
+    const usersResult = await pool.query(`
+      SELECT 
+        user_id,
+        username,
+        fullname,
+        current_profeciency_level,
+        signup_source,
+        last_activity_at
+      FROM app_user
+      WHERE last_activity_at > NOW() - INTERVAL '5 minutes'
+        AND role = 'user'
+      ORDER BY last_activity_at DESC
+      LIMIT 20
+    `);
+
+    const activeCount = parseInt(countResult.rows[0].active_count);
+    const webUsers = parseInt(countResult.rows[0].web_users);
+    const appUsers = parseInt(countResult.rows[0].app_users);
 
     res.status(200).json({
       activeUsersNow: activeCount,
+      webUsers: webUsers,
+      appUsers: appUsers,
+      activeUsersList: usersResult.rows,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -339,8 +557,8 @@ async function getStreakLeaderboard(req, res) {
     // Whitelist validation - only allow known column names to prevent SQL injection
     const validTypes = ["current", "longest"];
     const safeType = validTypes.includes(type) ? type : "current";
-    const orderByColumn = safeType === "longest" ? "longest_streak" : "current_streak";
-
+    const orderByColumn =
+      safeType === "longest" ? "longest_streak" : "current_streak";
 
     const result = await pool.query(
       `SELECT 
@@ -356,7 +574,7 @@ async function getStreakLeaderboard(req, res) {
       WHERE us.${orderByColumn} > 0
       ORDER BY us.${orderByColumn} DESC, us.streak_updated_at DESC
       LIMIT $1`,
-      [parseInt(limit)]
+      [parseInt(limit)],
     );
 
     res.status(200).json({
@@ -408,7 +626,7 @@ async function trackNotificationOpen(req, res) {
          AND notification_type = $2 
          AND sent_at = $3::timestamp 
          AND opened = false`,
-      [userId, notificationType, sentAt]
+      [userId, notificationType, sentAt],
     );
 
     res.status(200).json({ success: true });
@@ -426,9 +644,9 @@ async function getNotificationStats(req, res) {
     const params = [];
 
     if (startDate && endDate) {
-  params.push(startDate, endDate);
-  whereClause += ` AND sent_at >= $${params.length - 1}::timestamp AND sent_at <= $${params.length}::timestamp`;
-}
+      params.push(startDate, endDate);
+      whereClause += ` AND sent_at >= $${params.length - 1}::timestamp AND sent_at <= $${params.length}::timestamp`;
+    }
 
     if (notificationType) {
       params.push(notificationType);
@@ -450,7 +668,7 @@ async function getNotificationStats(req, res) {
       ${whereClause}
       GROUP BY notification_type, DATE(sent_at)
       ORDER BY date DESC, notification_type`,
-      params
+      params,
     );
 
     res.status(200).json(result.rows);

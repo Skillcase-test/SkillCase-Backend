@@ -32,6 +32,9 @@ const authRouter = require("./routes/authRouter");
 const eventRouter = require("./routes/eventRouter");
 const eventAdminRouter = require("./routes/eventAdminRouter");
 
+const a2Router = require("./routes/a2/a2Router");
+const a2AdminRouter = require("./routes/a2/a2AdminRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
@@ -68,7 +71,7 @@ app.use(
     origin: allowed_origins,
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
-  })
+  }),
 );
 
 const pool = db.pool;
@@ -76,7 +79,7 @@ const pool = db.pool;
 db.initDb(pool);
 
 initStreakNotificationJobs();
-initMessageSchedulerJob();
+// initMessageSchedulerJob();
 startOtpCleanupJob();
 initEventReminderJob();
 
@@ -108,8 +111,11 @@ app.use(
   "/api/admin/conversation",
   authMiddleware,
   authorizeRole("admin"),
-  conversationAdminRouter
+  conversationAdminRouter,
 );
+
+app.use("/api/a2", authMiddleware, a2Router);
+app.use("/api/admin/a2", authMiddleware, authorizeRole("admin"), a2AdminRouter);
 
 app.use("/api/sso", ssoRouter);
 
@@ -130,7 +136,7 @@ app.use(
   "/api/notifications",
   authMiddleware,
   authorizeRole("admin"),
-  notificationRouter
+  notificationRouter,
 );
 
 app.use("/api/events", eventRouter);

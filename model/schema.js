@@ -455,11 +455,14 @@ ALTER TABLE app_user
   ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS article_education_complete BOOLEAN DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS app_version VARCHAR(20);
+  ADD COLUMN IF NOT EXISTS app_version VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS signup_source VARCHAR(10) DEFAULT 'web';
 
   UPDATE app_user SET phone = number WHERE phone IS NULL AND number IS NOT NULL;
   UPDATE app_user SET fullname = username WHERE fullname IS NULL;
   UPDATE app_user SET status = 1 WHERE status IS NULL OR status = 0;
+  UPDATE app_user SET signup_source = 'app' WHERE fcm_token IS NOT NULL AND signup_source IS NULL;
+  UPDATE app_user SET signup_source = 'web' WHERE signup_source IS NULL;
   
   CREATE INDEX IF NOT EXISTS idx_app_user_last_activity 
   ON app_user(last_activity_at);
@@ -561,6 +564,239 @@ CREATE TABLE IF NOT EXISTS event_instance_override (
 CREATE INDEX IF NOT EXISTS idx_override_event_date ON event_instance_override(event_id, instance_date);
 `;
 
+const createA2Tables = `
+
+-- A2 CHAPTER MANAGEMENT (Used by all modules)
+CREATE TABLE IF NOT EXISTS a2_chapter (
+  id SERIAL PRIMARY KEY,
+  module VARCHAR(50) NOT NULL,  -- 'flashcard', 'grammar', 'listening', 'speaking', 'reading', 'test'
+  chapter_name VARCHAR(255) NOT NULL,
+  description TEXT,
+  order_index INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_a2_chapter_module ON a2_chapter(module);
+CREATE INDEX IF NOT EXISTS idx_a2_chapter_order ON a2_chapter(module, order_index);
+
+-- A2 FLASHCARD TABLES
+CREATE TABLE IF NOT EXISTS a2_flashcard_set (
+  set_id SERIAL PRIMARY KEY,
+  chapter_id INTEGER REFERENCES a2_chapter(id) ON DELETE CASCADE,
+  set_name VARCHAR(255) NOT NULL,
+  number_of_cards INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS a2_flashcard (
+  card_id SERIAL PRIMARY KEY,
+  set_id INTEGER REFERENCES a2_flashcard_set(set_id) ON DELETE CASCADE,
+  front_de TEXT NOT NULL,         -- German word
+  front_meaning TEXT NOT NULL,     -- English meaning
+  back_de TEXT NOT NULL,           -- German sentence
+  back_en TEXT NOT NULL,           -- English sentence
+  card_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_a2_flashcard_set ON a2_flashcard(set_id);
+
+CREATE TABLE IF NOT EXISTS a2_flashcard_progress (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  set_id INTEGER REFERENCES a2_flashcard_set(set_id) ON DELETE CASCADE,
+  current_index INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  mini_quiz_passed BOOLEAN DEFAULT false,
+  final_quiz_passed BOOLEAN DEFAULT false,
+  last_reviewed TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, set_id)
+);
+
+CREATE TABLE IF NOT EXISTS a2_flashcard_quiz_result (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  set_id INTEGER REFERENCES a2_flashcard_set(set_id) ON DELETE CASCADE,
+  quiz_type VARCHAR(20) NOT NULL,  -- 'mini' or 'final'
+  score DECIMAL(5,2) NOT NULL,
+  passed BOOLEAN NOT NULL,
+  answers JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- A2 GRAMMAR TABLES
+CREATE TABLE IF NOT EXISTS a2_grammar_topic (
+  id SERIAL PRIMARY KEY,
+  chapter_id INTEGER REFERENCES a2_chapter(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  explanation TEXT NOT NULL,       -- Full grammar explanation
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS a2_grammar_question (
+  id SERIAL PRIMARY KEY,
+  topic_id INTEGER REFERENCES a2_grammar_topic(id) ON DELETE CASCADE,
+  question_type VARCHAR(50) NOT NULL,  -- 'mcq_single', 'mcq_multi', 'fill_typing', 'fill_options', 'true_false', 'sentence_ordering', 'sentence_correction', 'matching'
+  question_data JSONB NOT NULL,        -- Contains question, options, correct answer(s)
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_a2_grammar_question_topic ON a2_grammar_question(topic_id);
+
+CREATE TABLE IF NOT EXISTS a2_grammar_progress (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  topic_id INTEGER REFERENCES a2_grammar_topic(id) ON DELETE CASCADE,
+  current_question_index INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  score DECIMAL(5,2),
+  last_practiced TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, topic_id)
+);
+
+-- A2 LISTENING TABLES
+CREATE TABLE IF NOT EXISTS a2_listening_content (
+  id SERIAL PRIMARY KEY,
+  chapter_id INTEGER REFERENCES a2_chapter(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  content_type VARCHAR(50) NOT NULL,  -- 'monologue', 'dialogue', 'voicemail', 'announcement'
+  audio_url TEXT NOT NULL,
+  transcript TEXT,
+  subtitles JSONB,                     -- [{start: 0, end: 2, text: "..."}]
+  questions JSONB NOT NULL,            -- Array of questions with types
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS a2_listening_progress (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  content_id INTEGER REFERENCES a2_listening_content(id) ON DELETE CASCADE,
+  current_question_index INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  score DECIMAL(5,2),
+  last_practiced TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, content_id)
+);
+
+-- A2 SPEAKING TABLES
+CREATE TABLE IF NOT EXISTS a2_speaking_content (
+  id SERIAL PRIMARY KEY,
+  chapter_id INTEGER REFERENCES a2_chapter(id) ON DELETE CASCADE,
+  text_de TEXT NOT NULL,              -- German text to pronounce
+  text_en TEXT,                        -- English translation
+  audio_url TEXT,                      -- Pre-recorded audio (optional)
+  content_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_a2_speaking_chapter ON a2_speaking_content(chapter_id);
+
+CREATE TABLE IF NOT EXISTS a2_speaking_progress (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  chapter_id INTEGER REFERENCES a2_chapter(id) ON DELETE CASCADE,
+  current_content_index INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  last_practiced TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, chapter_id)
+);
+
+CREATE TABLE IF NOT EXISTS a2_speaking_assessment (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  content_id INTEGER REFERENCES a2_speaking_content(id) ON DELETE CASCADE,
+  score DECIMAL(5,2) NOT NULL,
+  accuracy_score DECIMAL(5,2),
+  fluency_score DECIMAL(5,2),
+  pronunciation_score DECIMAL(5,2),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- A2 READING TABLES
+CREATE TABLE IF NOT EXISTS a2_reading_content (
+  id SERIAL PRIMARY KEY,
+  chapter_id INTEGER REFERENCES a2_chapter(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  content_type VARCHAR(50) NOT NULL,   -- 'email', 'sms', 'article', 'story'
+  content TEXT NOT NULL,               -- Main reading content with ##word(meaning)## markers
+  hero_image_url TEXT,                 -- For story type
+  vocabulary JSONB,                    -- Extracted [{word: "Geld", meaning: "money"}]
+  questions JSONB NOT NULL,            -- Array of questions
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS a2_reading_progress (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  content_id INTEGER REFERENCES a2_reading_content(id) ON DELETE CASCADE,
+  current_question_index INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  score DECIMAL(5,2),
+  last_practiced TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, content_id)
+);
+
+-- A2 TEST TABLES
+CREATE TABLE IF NOT EXISTS a2_test_topic (
+  id SERIAL PRIMARY KEY,
+  chapter_id INTEGER REFERENCES a2_chapter(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  prerequisites JSONB,                 -- Array of prerequisite topic names
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS a2_test_set (
+  id SERIAL PRIMARY KEY,
+  topic_id INTEGER REFERENCES a2_test_topic(id) ON DELETE CASCADE,
+  level INTEGER NOT NULL CHECK (level BETWEEN 1 AND 5),
+  set_number INTEGER NOT NULL CHECK (set_number BETWEEN 1 AND 3),
+  questions JSONB NOT NULL,            -- Array of questions
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(topic_id, level, set_number)
+);
+
+CREATE TABLE IF NOT EXISTS a2_test_progress (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  topic_id INTEGER REFERENCES a2_test_topic(id) ON DELETE CASCADE,
+  current_level INTEGER DEFAULT 1,
+  current_set INTEGER DEFAULT 1,
+  attempts_on_current_set INTEGER DEFAULT 0,
+  levels_completed INTEGER DEFAULT 0,
+  is_fully_completed BOOLEAN DEFAULT false,
+  completed_sets JSONB DEFAULT '[]',   -- [{level: 1, set: 1, score: 85, passed: true}]
+  last_attempted TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, topic_id)
+);
+
+CREATE TABLE IF NOT EXISTS a2_user_progress (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL REFERENCES app_user(user_id),
+  module VARCHAR(50) NOT NULL,
+  chapter_id INTEGER NOT NULL REFERENCES a2_chapter(id),
+  cards_flipped INTEGER DEFAULT 0,
+  questions_completed INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  last_accessed TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, module, chapter_id)
+);
+CREATE INDEX IF NOT EXISTS idx_a2_progress_user ON a2_user_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_a2_progress_module ON a2_user_progress(module, chapter_id);
+
+
+-- For A2 Tour --
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS a2_onboarding_completed BOOLEAN DEFAULT FALSE;
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -597,4 +833,5 @@ module.exports = {
   createEventSubscription,
   alterTable,
   createEventOverride,
+  createA2Tables,
 };

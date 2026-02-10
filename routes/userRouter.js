@@ -16,7 +16,13 @@ router.post("/app-version", authMiddleware, userController.updateAppVersion);
 router.post(
   "/complete-onboarding",
   authMiddleware,
-  userController.completeOnboarding
+  userController.completeOnboarding,
+);
+
+router.post(
+  "/complete-a2-onboarding",
+  authMiddleware,
+  userController.completeA2Onboarding,
 );
 
 router.post("/notification-opened", authMiddleware, trackNotificationOpen);
@@ -25,12 +31,12 @@ router.post("/notification-opened", authMiddleware, trackNotificationOpen);
 router.get(
   "/article-education",
   authMiddleware,
-  userController.getArticleEducation
+  userController.getArticleEducation,
 );
 router.post(
   "/article-education/complete",
   authMiddleware,
-  userController.completeArticleEducation
+  userController.completeArticleEducation,
 );
 
 module.exports = router;

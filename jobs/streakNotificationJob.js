@@ -12,7 +12,7 @@ function getTodayIST() {
 // Get all users with FCM tokens
 async function getAllUserTokens() {
   const result = await pool.query(
-    "SELECT fcm_token FROM app_user WHERE fcm_token IS NOT NULL"
+    "SELECT fcm_token FROM app_user WHERE fcm_token IS NOT NULL",
   );
   return result.rows.map((row) => row.fcm_token);
 }
@@ -32,7 +32,7 @@ async function getUsersWithoutStreak() {
       AND uda.daily_goal_met = true
     )
   `,
-    [today]
+    [today],
   );
   return result.rows.map((row) => row.fcm_token);
 }
@@ -42,7 +42,7 @@ async function logSentNotifications(tokens, notificationType, sentTimestamp) {
   try {
     const result = await pool.query(
       `SELECT user_id FROM app_user WHERE fcm_token = ANY($1)`,
-      [tokens]
+      [tokens],
     );
     const userIds = result.rows.map((row) => row.user_id);
 
@@ -60,7 +60,7 @@ async function logSentNotifications(tokens, notificationType, sentTimestamp) {
     await pool.query(
       `INSERT INTO notification_analytics (user_id, notification_type, sent_at)
        VALUES ${values}`,
-      params
+      params,
     );
   } catch (error) {
     console.error("Error logging sent notifications:", error);
@@ -73,7 +73,7 @@ async function sendNotification(
   title,
   body,
   notificationType,
-  deepLink = "/continue"
+  deepLink = "/continue",
 ) {
   if (tokens.length === 0) return;
 
@@ -82,7 +82,13 @@ async function sendNotification(
   const message = {
     tokens,
     notification: { title, body },
-    android: { priority: "high" },
+    android: {
+      priority: "high",
+      notification: {
+        channelId: "skillcase_default",
+        sound: "skillcase_notification",
+      },
+    },
     data: {
       deepLink: deepLink,
       notificationType: notificationType,
@@ -113,10 +119,10 @@ function initStreakNotificationJobs() {
         tokens,
         "✨ Consistency Wins",
         "Practice German today and stay on track.",
-        "morning_reminder"
+        "morning_reminder",
       );
     },
-    { timezone: "Asia/Kolkata" }
+    { timezone: "Asia/Kolkata" },
   );
   // 8 PM IST - Evening reminder
   cron.schedule(
@@ -128,10 +134,10 @@ function initStreakNotificationJobs() {
         tokens,
         "🔥 Streak at Risk",
         "Just 2 minutes of German keeps your progress intact.",
-        "evening_reminder"
+        "evening_reminder",
       );
     },
-    { timezone: "Asia/Kolkata" }
+    { timezone: "Asia/Kolkata" },
   );
   console.log("Streak notification jobs scheduled");
 }

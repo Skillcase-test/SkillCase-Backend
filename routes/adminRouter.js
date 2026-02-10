@@ -55,6 +55,8 @@ const {
   getStories,
 } = require("../controllers/storyController");
 
+const { uploadNotificationImage } = require("../controllers/uploadController");
+
 const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -84,15 +86,15 @@ router.get("/analytics/user-count", getTotalUsers);
 router.get("/analytics/new-user-analytics", getNewUserAnalytics);
 router.get(
   "/analytics/prev-month-interaction-analytics",
-  getPreviousMonthFlashCardInteractions
+  getPreviousMonthFlashCardInteractions,
 );
 router.get(
   "/analytics/prev-month-user-completetion-analytics",
-  getPreviousMonthUserCompletionRate
+  getPreviousMonthUserCompletionRate,
 );
 router.get(
   "/analytics/prev-month-test-completetion-analytics",
-  getPreviousMonthTestCompletionRate
+  getPreviousMonthTestCompletionRate,
 );
 
 router.get("/analytics/story-analytics", getStoryAnalytics);
@@ -115,5 +117,11 @@ router.get("/stories", getStories);
 router.post("/stories", createStory);
 router.put("/stories/:slug", updateStory);
 router.delete("/stories/:slug", deleteStory);
+
+router.post(
+  "/upload/notification-image",
+  upload.single("image"),
+  uploadNotificationImage,
+);
 
 module.exports = router;

@@ -232,6 +232,7 @@ async function completeSignup(req, res) {
     qualification,
     language_level,
     experience,
+    signup_source,
   } = req.body;
 
   if (!phone || !fullname || !email) {
@@ -278,7 +279,8 @@ async function completeSignup(req, res) {
       `UPDATE app_user SET 
         fullname = $1, username = $1, email = $2, countrycode = $3,
         qualification = $4, language_level = $5, experience = $6,
-        current_profeciency_level = $7, status = 1, modified_at = NOW()
+        current_profeciency_level = $7, status = 1, modified_at = NOW(),
+        signup_source = $9
       WHERE user_id = $8`,
       [
         fullname,
@@ -289,6 +291,7 @@ async function completeSignup(req, res) {
         experience,
         proficiencyLevel,
         user.user_id,
+        signup_source || "web",
       ]
     );
 

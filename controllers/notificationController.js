@@ -5,7 +5,7 @@ let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
   const jsonString = Buffer.from(
     process.env.FIREBASE_SERVICE_ACCOUNT_BASE64,
-    "base64"
+    "base64",
   ).toString("utf-8");
   serviceAccount = JSON.parse(jsonString);
 } else {
@@ -19,10 +19,17 @@ const getUserById = async (userId) => {
   return result.rows[0];
 };
 
-const getAllUserTokens = async () => {
-  const result = await pool.query(
-    "SELECT fcm_token FROM app_user WHERE fcm_token IS NOT NULL"
-  );
+const getAllUserTokens = async (targetLevel = "all") => {
+  let query = "SELECT fcm_token FROM app_user WHERE fcm_token IS NOT NULL";
+  const params = [];
+  
+  // Filter by proficiency level if specified
+  if (targetLevel && targetLevel !== "all") {
+    query += " AND UPPER(current_profeciency_level) = $1";
+    params.push(targetLevel.toUpperCase());
+  }
+  
+  const result = await pool.query(query, params);
   return result.rows.map((row) => row.fcm_token);
 };
 
@@ -50,22 +57,59 @@ const sendNotification = async (req, res) => {
 };
 
 const broadcastNotification = async (req, res) => {
-  const { title, body } = req.body;
-  try {
-    const tokens = await getAllUserTokens();
+  const { title, body, deepLink, imageUrl, externalLink, targetLevel } = req.body;
 
+  if (!title || !body) {
+    return res.status(400).json({ error: "Title and body are required" });
+  }
+
+  try {
+    // Pass targetLevel to filter users (defaults to "all" if not specified)
+    const tokens = await getAllUserTokens(targetLevel || "all");
     if (tokens.length === 0) {
-      return res.status(400).json({ error: "No users with FCM tokens" });
+      const levelText = targetLevel && targetLevel !== "all" ? `${targetLevel.toUpperCase()} ` : "";
+      return res.status(400).json({ error: `No ${levelText}users with FCM tokens` });
     }
+    // Build notification payload
+    const notification = { title, body };
+
+    // Add image if provided (FCM native support)
+    if (imageUrl) {
+      notification.image = imageUrl;
+    }
+
+    // Determine which link to use (deepLink takes precedence over externalLink)
+    const linkToUse = deepLink || externalLink || "/continue";
+
+    const isExternalLink = externalLink && !deepLink;
+
     const message = {
       tokens: tokens,
-      notification: { title, body },
-      android: { priority: "high" },
+      notification: notification,
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "skillcase_default",
+          sound: "skillcase_notification",
+        },
+      },
+      data: {
+        deepLink: linkToUse,
+        isExternal: isExternalLink ? "true" : "false",
+        notificationType: "broadcast",
+        sentAt: new Date().toISOString(),
+      },
     };
+
     const response = await admin.messaging().sendEachForMulticast(message);
-    res.json({ success: true, sentTo: response.successCount });
+
+    res.json({
+      success: true,
+      sentTo: response.successCount,
+      failedCount: response.failureCount,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Broadcast notification error:", err);
     res.status(500).json({ error: "Failed to broadcast notification" });
   }
 };

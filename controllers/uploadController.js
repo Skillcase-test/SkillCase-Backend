@@ -48,4 +48,34 @@ const uploadEventImage = async (req, res) => {
   }
 };
 
-module.exports = { uploadProfilePhoto, uploadEventImage };
+const uploadNotificationImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Upload to Cloudinary with optimizations for notification display
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "skillcase/notification-images",
+      transformation: [
+        { width: 1024, height: 512, crop: "limit" }, // FCM recommended max
+        { quality: "auto", fetch_format: "auto" },
+      ],
+    });
+
+    res.json({
+      success: true,
+      url: result.secure_url,
+      publicId: result.public_id,
+    });
+  } catch (error) {
+    console.error("Notification image upload error:", error);
+    res.status(500).json({ error: "Failed to upload image" });
+  }
+};
+
+module.exports = {
+  uploadProfilePhoto,
+  uploadEventImage,
+  uploadNotificationImage,
+};

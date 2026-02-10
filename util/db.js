@@ -63,6 +63,7 @@ async function initDb(pool) {
     await pool.query(queries.createEventSubscription);
     await pool.query(queries.alterTable);
     await pool.query(queries.createEventOverride);
+    await pool.query(queries.createA2Tables);
 
     console.log("Tables created or already exist!");
   } catch (err) {

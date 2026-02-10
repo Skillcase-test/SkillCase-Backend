@@ -1,9 +1,12 @@
 const cron = require("node-cron");
 const { pool } = require("../util/db");
 
-// Cleanup old OTPs - run daily at midnight
+// Cleanup old OTPs
 function startOtpCleanupJob() {
-  cron.schedule("0 0 * * *", async () => {
+  // Run at 3 AM IST
+  cron.schedule(
+    "0 3 * * *",
+    async () => {
     console.log("Running OTP cleanup job...");
 
     try {
@@ -13,7 +16,7 @@ function startOtpCleanupJob() {
     } catch (error) {
       console.error("OTP cleanup error:", error);
     }
-  });
+  }, { timezone: "Asia/Kolkata" });
 }
 
 module.exports = { startOtpCleanupJob };
