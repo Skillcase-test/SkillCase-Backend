@@ -135,6 +135,29 @@ async function getTotalUsers(req, res) {
   }
 }
 
+async function getAllUsers(req, res) {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        user_id,
+        username,
+        fullname,
+        phone,
+        current_profeciency_level,
+        signup_source,
+        created_at,
+        last_activity_at
+      FROM app_user
+      WHERE role = 'user'
+      ORDER BY created_at DESC
+    `);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error("Error fetching all users:", error);
+    res.status(500).json({ error: "Error fetching all users" });
+  }
+}
+
 async function getStoryAnalytics(req, res) {
   try {
     const result = await pool.query(
@@ -639,6 +662,7 @@ module.exports = {
   getPreviousMonthUserCompletionRate,
   getNewUserAnalytics,
   getTotalUsers,
+  getAllUsers,
   getStoryAnalytics,
   getPronounceAnalytics,
   getConversationAnalytics,
