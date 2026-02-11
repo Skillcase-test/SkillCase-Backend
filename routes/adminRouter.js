@@ -45,6 +45,7 @@ const {
   getStreakStats,
   getNotificationStats,
   getNotificationSummary,
+  getDailyActiveUsers,
 } = require("../controllers/analyticsController");
 
 const { getAllAgreements } = require("../controllers/agreementController");
@@ -102,6 +103,7 @@ router.get("/analytics/pronounce-analytics", getPronounceAnalytics);
 router.get("/analytics/conversation-analytics", getConversationAnalytics);
 router.get("/analytics/user-history/:user_id", getUserDetailedHistory);
 router.get("/analytics/recent-activity", getRecentActivity);
+router.get("/analytics/daily-active-users", getDailyActiveUsers);
 
 router.get("/analytics/active-users-now", getActiveUsersNow);
 

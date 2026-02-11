@@ -456,7 +456,8 @@ ALTER TABLE app_user
   ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS article_education_complete BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS app_version VARCHAR(20),
-  ADD COLUMN IF NOT EXISTS signup_source VARCHAR(10) DEFAULT 'web';
+  ADD COLUMN IF NOT EXISTS signup_source VARCHAR(10) DEFAULT 'web',
+  ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;
 
   UPDATE app_user SET phone = number WHERE phone IS NULL AND number IS NOT NULL;
   UPDATE app_user SET fullname = username WHERE fullname IS NULL;

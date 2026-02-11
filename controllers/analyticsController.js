@@ -318,189 +318,116 @@ async function getUserDetailedHistory(req, res) {
   }
 }
 
+// Helper for recent activity
+const ACTIVITY_UNION_QUERY = `
+-- Flashcards 
+SELECT user_id, modified_at as activity_time FROM user_chapter_submissions WHERE test_status = true AND modified_at BETWEEN $1 AND $2
+UNION ALL
+-- Pronunciation
+SELECT user_id, last_accessed as activity_time FROM user_pronounce_progress WHERE completed = true AND last_accessed BETWEEN $1 AND $2
+UNION ALL
+-- Conversations
+SELECT user_id, last_accessed as activity_time FROM user_conversation_progress WHERE completed = true AND last_accessed BETWEEN $1 AND $2
+UNION ALL
+-- Stories
+SELECT user_id, completed_at as activity_time FROM user_story_progress WHERE completed = true AND completed_at BETWEEN $1 AND $2
+UNION ALL
+-- A2 Flashcards
+SELECT user_id::text, last_reviewed as activity_time FROM a2_flashcard_progress WHERE is_completed = true AND last_reviewed BETWEEN $1 AND $2
+UNION ALL
+-- A2 Grammar
+SELECT user_id::text, last_practiced as activity_time FROM a2_grammar_progress WHERE is_completed = true AND last_practiced BETWEEN $1 AND $2
+UNION ALL
+-- A2 Listening
+SELECT user_id::text, last_practiced as activity_time FROM a2_listening_progress WHERE is_completed = true AND last_practiced BETWEEN $1 AND $2
+UNION ALL
+-- A2 Speaking
+SELECT user_id::text, last_practiced as activity_time FROM a2_speaking_progress WHERE is_completed = true AND last_practiced BETWEEN $1 AND $2
+UNION ALL
+-- A2 Reading
+SELECT user_id::text, last_practiced as activity_time FROM a2_reading_progress WHERE is_completed = true AND last_practiced BETWEEN $1 AND $2
+UNION ALL
+-- A2 Test
+SELECT user_id::text, last_attempted as activity_time FROM a2_test_progress WHERE is_fully_completed = true AND last_attempted BETWEEN $1 AND $2
+`;
+
 async function getRecentActivity(req, res) {
   const { startDate, endDate } = req.query;
-
   try {
     if (!startDate || !endDate) {
       return res.status(400).send("Both start and end date are required!");
     }
+    // Fix: Add 1 day to endDate to fully include the last day
+    const adjustedEndDate = new Date(endDate);
+    adjustedEndDate.setDate(adjustedEndDate.getDate() + 1);
+    const endDateStr = adjustedEndDate.toISOString().split("T")[0];
     const result = await pool.query(
       `
-      WITH user_activities AS (
-        -- FlashCards
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(ucs.modified_at) as last_activity
-        FROM user_chapter_submissions ucs
-        JOIN app_user u ON ucs.user_id = u.user_id
-        WHERE ucs.test_status = true
-          AND ucs.modified_at >= $1::timestamp
-          AND ucs.modified_at <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- PronounceCards
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(upp.last_accessed) as last_activity
-        FROM user_pronounce_progress upp
-        JOIN app_user u ON upp.user_id = u.user_id
-        WHERE upp.completed = true
-          AND upp.last_accessed >= $1::timestamp
-          AND upp.last_accessed <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- Conversations
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(ucp.last_accessed) as last_activity
-        FROM user_conversation_progress ucp
-        JOIN app_user u ON ucp.user_id = u.user_id
-        WHERE ucp.completed = true
-          AND ucp.last_accessed >= $1::timestamp
-          AND ucp.last_accessed <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- Stories
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(usp.completed_at) as last_activity
-        FROM user_story_progress usp
-        JOIN app_user u ON usp.user_id = u.user_id
-        WHERE usp.completed = true
-          AND usp.completed_at >= $1::timestamp
-          AND usp.completed_at <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- A2 Flashcards
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(afp.last_reviewed) as last_activity
-        FROM a2_flashcard_progress afp
-        JOIN app_user u ON afp.user_id::text = u.user_id
-        WHERE afp.is_completed = true
-          AND afp.last_reviewed >= $1::timestamp
-          AND afp.last_reviewed <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- A2 Grammar
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(agp.last_practiced) as last_activity
-        FROM a2_grammar_progress agp
-        JOIN app_user u ON agp.user_id::text = u.user_id
-        WHERE agp.is_completed = true
-          AND agp.last_practiced >= $1::timestamp
-          AND agp.last_practiced <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- A2 Listening
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(alp.last_practiced) as last_activity
-        FROM a2_listening_progress alp
-        JOIN app_user u ON alp.user_id::text = u.user_id
-        WHERE alp.is_completed = true
-          AND alp.last_practiced >= $1::timestamp
-          AND alp.last_practiced <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- A2 Speaking
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(asp.last_practiced) as last_activity
-        FROM a2_speaking_progress asp
-        JOIN app_user u ON asp.user_id::text = u.user_id
-        WHERE asp.is_completed = true
-          AND asp.last_practiced >= $1::timestamp
-          AND asp.last_practiced <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- A2 Reading
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(arp.last_practiced) as last_activity
-        FROM a2_reading_progress arp
-        JOIN app_user u ON arp.user_id::text = u.user_id
-        WHERE arp.is_completed = true
-          AND arp.last_practiced >= $1::timestamp
-          AND arp.last_practiced <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
-        
-        UNION
-        
-        -- A2 Test
-        SELECT DISTINCT
-          u.user_id,
-          u.username,
-          u.current_profeciency_level as proficiency_level,
-          MAX(atp.last_attempted) as last_activity
-        FROM a2_test_progress atp
-        JOIN app_user u ON atp.user_id::text = u.user_id
-        WHERE atp.is_fully_completed = true
-          AND atp.last_attempted >= $1::timestamp
-          AND atp.last_attempted <= $2::timestamp
-          AND u.role = 'user'
-        GROUP BY u.user_id, u.username, u.current_profeciency_level
+      WITH all_activities AS (
+        ${ACTIVITY_UNION_QUERY}
       )
       SELECT 
-        user_id,
-        username,
-        proficiency_level,
-        MAX(last_activity) as last_activity
-      FROM user_activities
-      GROUP BY user_id, username, proficiency_level
+        u.user_id,
+        u.username,
+        u.current_profeciency_level as proficiency_level,
+        MAX(a.activity_time) as last_activity
+      FROM all_activities a
+      JOIN app_user u ON a.user_id = u.user_id
+      WHERE u.role = 'user'
+      GROUP BY u.user_id, u.username, u.current_profeciency_level
       ORDER BY last_activity DESC
+      LIMIT 100
       `,
-      [startDate, endDate],
+      [startDate, endDateStr],
     );
     res.status(200).json(result.rows);
   } catch (error) {
     console.log("Error in getting recent activity: ", error.message);
     res.status(500).send("Error in fetching recent activity");
+  }
+}
+
+async function getDailyActiveUsers(req, res) {
+  try {
+    const days = parseInt(req.query.days) || 7;
+
+    // Calculate date range
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 1); // Include full today
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split("T")[0];
+    const endDateStr = endDate.toISOString().split("T")[0];
+    const result = await pool.query(
+      `
+      WITH all_activities AS (
+        ${ACTIVITY_UNION_QUERY}
+      ),
+      daily_stats AS (
+        SELECT 
+            DATE(a.activity_time AT TIME ZONE 'Asia/Kolkata') as activity_date,
+            u.current_profeciency_level,
+            COUNT(DISTINCT a.user_id) as active_count
+        FROM all_activities a
+        JOIN app_user u ON a.user_id = u.user_id
+        WHERE u.role = 'user'
+        GROUP BY 1, 2
+      )
+      SELECT 
+        activity_date,
+        SUM(CASE WHEN UPPER(current_profeciency_level) = 'A1' THEN active_count ELSE 0 END) as a1_count,
+        SUM(CASE WHEN UPPER(current_profeciency_level) = 'A2' THEN active_count ELSE 0 END) as a2_count,
+        SUM(active_count) as total_active
+      FROM daily_stats
+      GROUP BY activity_date
+      ORDER BY activity_date ASC
+      `,
+      [startDateStr, endDateStr],
+    );
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error("Error fetching daily active users:", error);
+    res.status(500).json({ error: "Error fetching DAU stats" });
   }
 }
 
@@ -717,6 +644,7 @@ module.exports = {
   getConversationAnalytics,
   getUserDetailedHistory,
   getRecentActivity,
+  getDailyActiveUsers,
   getActiveUsersNow,
   getStreakLeaderboard,
   getStreakStats,
