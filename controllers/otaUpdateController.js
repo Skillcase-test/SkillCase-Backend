@@ -10,8 +10,8 @@ const {
 // 1. Move CURRENT_VERSION value to PREVIOUS_VERSION
 // 2. Set CURRENT_VERSION to the new version
 // 3. Deploy the new bundle.zip to /public/updates/
-const CURRENT_VERSION = "1.0.3";
-const PREVIOUS_VERSION = "1.0.1"; // Only this version will receive OTA updates
+const CURRENT_VERSION = "1.0.4";
+const PREVIOUS_VERSION = "1.0.3"; // Only this version will receive OTA updates
 
 const BUNDLE_URL = `${process.env.BACKEND_URL}/updates/bundle.zip`;
 const PLAY_STORE_URL =

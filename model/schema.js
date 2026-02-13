@@ -547,6 +547,12 @@ ALTER TABLE event_registration ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DE
 ALTER TABLE event_registration ALTER COLUMN registered_at DROP DEFAULT;
 -- Add new default with IST timezone
 ALTER TABLE event_registration ALTER COLUMN registered_at SET DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata');
+
+ALTER TABLE user_daily_activity ADD COLUMN IF NOT EXISTS points_earned INTEGER DEFAULT 0;ALTER TABLE app_user ADD COLUMN IF NOT EXISTS dob DATE;
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS profile_pic_url TEXT DEFAULT '';
+
+
 CREATE INDEX IF NOT EXISTS idx_registration_reminder ON event_registration(reminder_sent, instance_date);
 `;
 

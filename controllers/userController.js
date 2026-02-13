@@ -158,6 +158,8 @@ async function me(req, res) {
         user_prof_level: user.current_profeciency_level,
         onboarding_completed: user.onboarding_completed,
         a2_onboarding_completed: user.a2_onboarding_completed || false,
+        fullname: user.fullname || "",
+        profile_pic_url: user.profile_pic_url || "",
       },
     });
   } catch (err) {
@@ -310,6 +312,142 @@ async function completeA2Onboarding(req, res) {
   }
 }
 
+// GET PROFILE
+async function getProfile(req, res) {
+  if (!req.user) {
+    return res.status(401).json({ msg: "Unauthorized" });
+  }
+
+  const { user_id } = req.user;
+
+  try {
+    const result = await pool.query(
+      `SELECT user_id, username, fullname, email, number, countrycode,
+              dob::text, gender, qualification, language_level, experience,
+              profile_pic_url, status, current_profeciency_level
+       FROM app_user WHERE user_id = $1`,
+      [user_id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    const user = result.rows[0];
+
+    res.status(200).json({
+      profile: {
+        user_id: user.user_id,
+        username: user.username,
+        fullname: user.fullname || "",
+        email: user.email || "",
+        number: user.number,
+        countrycode: user.countrycode || "+91",
+        dob: user.dob || "",
+        gender: user.gender || "",
+        qualification: user.qualification || "",
+        language_level: user.language_level || "",
+        experience: user.experience || "",
+        profile_pic_url: user.profile_pic_url || "",
+        status: user.status || 0,
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching profile:", err);
+    return res.status(500).json({ msg: "Error fetching profile" });
+  }
+}
+
+// UPDATE PROFILE
+async function updateProfile(req, res) {
+  if (!req.user) {
+    return res.status(401).json({ msg: "Unauthorized" });
+  }
+
+  const { user_id } = req.user;
+  const {
+    fullname,
+    email,
+    dob,
+    gender,
+    qualification,
+    language_level,
+    experience,
+  } = req.body;
+
+  // Validate required fields
+  if (!fullname || !fullname.trim()) {
+    return res.status(400).json({ msg: "Full name is required" });
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ msg: "Invalid email format" });
+  }
+
+  // Determine profile completion status
+  const isComplete =
+    fullname &&
+    email &&
+    dob &&
+    gender &&
+    qualification &&
+    language_level &&
+    experience;
+  const status = isComplete ? 1 : 0;
+
+  try {
+    const result = await pool.query(
+      `UPDATE app_user
+       SET fullname = $1, email = $2, dob = $3, gender = $4,
+           qualification = $5, language_level = $6, experience = $7,
+           status = $8, modified_at = CURRENT_TIMESTAMP
+       WHERE user_id = $9
+       RETURNING user_id, username, fullname, email, number, countrycode,
+                 dob::text, gender, qualification, language_level, experience,
+                 profile_pic_url, status`,
+      [
+        fullname.trim(),
+        email ? email.trim() : null,
+        dob || null,
+        gender || null,
+        qualification || null,
+        language_level || null,
+        experience || null,
+        status,
+        user_id,
+      ],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    const user = result.rows[0];
+
+    res.status(200).json({
+      msg: "Profile updated successfully",
+      profile: {
+        user_id: user.user_id,
+        username: user.username,
+        fullname: user.fullname || "",
+        email: user.email || "",
+        number: user.number,
+        countrycode: user.countrycode || "+91",
+        dob: user.dob || "",
+        gender: user.gender || "",
+        qualification: user.qualification || "",
+        language_level: user.language_level || "",
+        experience: user.experience || "",
+        profile_pic_url: user.profile_pic_url || "",
+        status: user.status || 0,
+      },
+    });
+  } catch (err) {
+    console.error("Error updating profile:", err);
+    return res.status(500).json({ msg: "Error updating profile" });
+  }
+}
+
 module.exports = {
   login,
   signup,
@@ -321,4 +459,6 @@ module.exports = {
   getArticleEducation,
   completeArticleEducation,
   completeA2Onboarding,
+  getProfile,
+  updateProfile,
 };

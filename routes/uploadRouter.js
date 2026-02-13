@@ -1,8 +1,12 @@
 const express = require("express");
 const multer = require("multer");
-const { uploadProfilePhoto } = require("../controllers/uploadController");
+const {
+  uploadProfilePhoto,
+  uploadUserProfilePhoto,
+} = require("../controllers/uploadController");
 const { authMiddleware } = require("../middlewares/auth_middleware");
 const router = express.Router();
+
 // Configure multer for file uploads
 const upload = multer({
   dest: "tmp/uploads/",
@@ -15,10 +19,19 @@ const upload = multer({
     }
   },
 });
+
 router.post(
   "/profile-photo",
   authMiddleware,
   upload.single("photo"),
-  uploadProfilePhoto
+  uploadProfilePhoto,
 );
+
+router.post(
+  "/user-profile-photo",
+  authMiddleware,
+  upload.single("photo"),
+  uploadUserProfilePhoto,
+);
+
 module.exports = router;

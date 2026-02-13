@@ -131,6 +131,7 @@ app.use("/api/streak", authMiddleware, streakRouter);
 
 app.use("/updates", express.static("public/updates")); // Serve bundles
 app.use("/api/updates", updateRouter);
+app.use("/api/api/updates", updateRouter); 
 
 app.use(
   "/api/notifications",

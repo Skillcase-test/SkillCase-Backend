@@ -2,10 +2,6 @@ const cron = require("node-cron");
 const admin = require("firebase-admin");
 const { pool } = require("../util/db");
 
-// App Update Campaign State - Auto-enabled
-let updateDayCounter = 0; // 0 = day 1, 1 = day 2, 2 = day 3
-let lastUpdateSentDate = null; // Track which date we last sent on
-
 function getTodayIST() {
   const now = new Date();
   const istOffset = 5.5 * 60 * 60 * 1000;
@@ -111,36 +107,6 @@ async function sendNotification(
   }
 }
 
-// Send app update reminder
-async function sendUpdateReminder(expectedDay, title, body) {
-  if (updateDayCounter !== expectedDay) return;
-
-  const today = getTodayIST();
-
-  // Prevent sending multiple updates on same day
-  if (lastUpdateSentDate === today) {
-    console.log(`Update reminder already sent today (${today}), skipping`);
-    return;
-  }
-
-  const tokens = await getAllUserTokens();
-  const playStoreLink = "market://details?id=com.skillcase.app";
-
-  await sendNotification(
-    tokens,
-    title,
-    body,
-    `app_update_day${expectedDay + 1}`,
-    playStoreLink,
-  );
-
-  updateDayCounter++;
-  lastUpdateSentDate = today;
-  console.log(
-    `Update reminder Day ${expectedDay + 1} sent on ${today}, next will be Day ${updateDayCounter + 1}`,
-  );
-}
-
 // Schedule jobs
 function initStreakNotificationJobs() {
   // 11 AM IST - Morning reminder to ALL users
@@ -175,47 +141,7 @@ function initStreakNotificationJobs() {
     { timezone: "Asia/Kolkata" },
   );
 
-  // 6 PM IST - App Update Day 1
-  cron.schedule(
-    "0 18 * * *",
-    async () => {
-      await sendUpdateReminder(
-        0,
-        "New SkillCase Update Available",
-        "We've added exciting new features! Update now to get the best experience.",
-      );
-    },
-    { timezone: "Asia/Kolkata" },
-  );
-
-  // 9 PM IST - App Update Day 2
-  cron.schedule(
-    "0 21 * * *",
-    async () => {
-      await sendUpdateReminder(
-        1,
-        "Don't Miss Out on New Features",
-        "Update SkillCase to access improved performance and new learning tools.",
-      );
-    },
-    { timezone: "Asia/Kolkata" },
-  );
-
-  // 2 PM IST - App Update Day 3
-  cron.schedule(
-    "0 14 * * *",
-    async () => {
-      await sendUpdateReminder(
-        2,
-        "Final Reminder: Update SkillCase",
-        "Update your app now to continue enjoying the latest features and improvements.",
-      );
-    },
-    { timezone: "Asia/Kolkata" },
-  );
-
   console.log("Streak notification jobs scheduled");
-  console.log("Update campaign: Day 1 at 6PM, Day 2 at 9PM, Day 3 at 2PM");
 }
 
 module.exports = {

@@ -32,7 +32,7 @@ async function getStreakData(req, res) {
         s.current_streak,
         s.longest_streak,
         s.last_goal_date,
-        COALESCE(a.flashcards_practiced, 0) as flashcards_practiced,
+        COALESCE(a.points_earned, 0) as points_earned,
         COALESCE(a.daily_goal_met, false) as daily_goal_met
       FROM (SELECT 1) dummy
       LEFT JOIN user_streak s ON s.user_id = $1
@@ -43,7 +43,7 @@ async function getStreakData(req, res) {
     let currentStreak = result.rows[0]?.current_streak ?? 0;
     let longestStreak = result.rows[0]?.longest_streak ?? 0;
     let lastGoalDate = result.rows[0]?.last_goal_date;
-    let todayFlashcards = result.rows[0]?.flashcards_practiced ?? 0;
+    let todayPoints = result.rows[0]?.points_earned ?? 0;
     let dailyGoalMet = result.rows[0]?.daily_goal_met ?? false;
 
     // Create streak record if doesn't exist
@@ -70,7 +70,8 @@ async function getStreakData(req, res) {
     res.status(200).json({
       currentStreak,
       longestStreak,
-      todayFlashcards,
+      todayPoints,
+      todayFlashcards: todayPoints, // Backward compat: old Capacitor app reads this field
       dailyGoal: 20,
       dailyGoalMet,
       lastGoalDate,
@@ -81,35 +82,39 @@ async function getStreakData(req, res) {
   }
 }
 
-// Log a flashcard flip
-async function logFlashcardActivity(req, res) {
+// Log streak points from any module
+async function logStreakPoints(req, res) {
   try {
     const userId = req.user?.user_id;
     if (!userId) {
       return res.status(400).json({ msg: "User not authenticated" });
     }
+
+    // Accept points from body, default to 1 for backward compatibility
+    const points = Math.min(Math.max(parseInt(req.body?.points) || 1, 1), 100);
     const today = getTodayIST();
     const yesterday = getYesterdayIST();
 
-    // Upsert today's activity - increment flashcards_practiced
+    // Upsert today's activity - increment points_earned
     const activityResult = await pool.query(
-      `INSERT INTO user_daily_activity (user_id, activity_date, flashcards_practiced)
-       VALUES ($1, $2, 1)
+      `INSERT INTO user_daily_activity (user_id, activity_date, flashcards_practiced, points_earned)
+       VALUES ($1, $2, $3, $3)
        ON CONFLICT (user_id, activity_date)
        DO UPDATE SET 
-         flashcards_practiced = user_daily_activity.flashcards_practiced + 1,
+         points_earned = user_daily_activity.points_earned + $3,
+         flashcards_practiced = user_daily_activity.flashcards_practiced + $3,
          updated_at = CURRENT_TIMESTAMP
-       RETURNING flashcards_practiced, daily_goal_met`,
-      [userId, today],
+       RETURNING points_earned, daily_goal_met`,
+      [userId, today, points],
     );
 
-    const todayFlashcards = activityResult.rows[0].flashcards_practiced;
+    const todayPoints = activityResult.rows[0].points_earned;
     let dailyGoalMet = activityResult.rows[0].daily_goal_met;
     let streakUpdated = false;
     let currentStreak = 0;
 
-    // Check if daily goal just reached (exactly 20)
-    if (todayFlashcards >= 20 && !dailyGoalMet) {
+    // Check if daily goal just reached (>= 20)
+    if (todayPoints >= 20 && !dailyGoalMet) {
       // Mark goal as met
       await pool.query(
         `UPDATE user_daily_activity SET daily_goal_met = true WHERE user_id = $1 AND activity_date = $2`,
@@ -122,9 +127,10 @@ async function logFlashcardActivity(req, res) {
         `SELECT * FROM user_streak WHERE user_id = $1`,
         [userId],
       );
+      currentStreak = 0;
       let longestStreak = 0;
+
       if (streakResult.rows.length === 0) {
-        // First time - create streak record with streak = 1
         currentStreak = 1;
         longestStreak = 1;
         await pool.query(
@@ -136,31 +142,27 @@ async function logFlashcardActivity(req, res) {
         const lastGoalDate = streakResult.rows[0].last_goal_date;
         currentStreak = streakResult.rows[0].current_streak;
         longestStreak = streakResult.rows[0].longest_streak;
-        // Check if yesterday's goal was met
+
         if (lastGoalDate) {
           const lastGoalStr = new Date(lastGoalDate)
             .toISOString()
             .split("T")[0];
+
           if (lastGoalStr === yesterday) {
-            // Consecutive day - increment streak
             currentStreak += 1;
           } else if (lastGoalStr === today) {
-            // Already updated today - but ensure streak is at least 1
-            if (currentStreak === 0) {
-              currentStreak = 1;
-            }
+            if (currentStreak === 0) currentStreak = 1;
           } else {
-            // Streak broken - start fresh
             currentStreak = 1;
           }
         } else {
-          // No previous goal - start streak
           currentStreak = 1;
         }
-        // Update longest streak if needed
+
         if (currentStreak > longestStreak) {
           longestStreak = currentStreak;
         }
+
         await pool.query(
           `UPDATE user_streak 
            SET current_streak = $1, longest_streak = $2, last_goal_date = $3, streak_updated_at = CURRENT_TIMESTAMP
@@ -168,17 +170,20 @@ async function logFlashcardActivity(req, res) {
           [currentStreak, longestStreak, today, userId],
         );
       }
+
       streakUpdated = true;
     }
+
     res.status(200).json({
-      todayFlashcards,
+      todayPoints,
+      todayFlashcards: todayPoints, // Backward compat: old Capacitor app reads this field
       dailyGoal: 20,
       dailyGoalMet,
       streakUpdated,
       currentStreak,
     });
   } catch (err) {
-    console.error("Error logging flashcard activity:", err);
+    console.error("Error logging streak points:", err);
     res.status(500).json({ msg: "Error logging activity" });
   }
 }
@@ -300,12 +305,88 @@ async function saveFlippedCard(req, res) {
     if (!userId || set_id === undefined || card_index === undefined) {
       return res.status(400).json({ msg: "Missing required fields" });
     }
-    await pool.query(
+    // Save the flipped card record
+    const result = await pool.query(
       `INSERT INTO user_flipped_cards (user_id, set_id, card_index)
        VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, set_id, card_index) DO NOTHING`,
+       ON CONFLICT (user_id, set_id, card_index) DO NOTHING
+       RETURNING *`,
       [userId, set_id, card_index],
     );
+
+    // Only log a point if the card was actually new (not a duplicate)
+    if (result.rowCount > 0) {
+      const today = getTodayIST();
+      const yesterday = getYesterdayIST();
+
+      const activityResult = await pool.query(
+        `INSERT INTO user_daily_activity (user_id, activity_date, flashcards_practiced, points_earned)
+         VALUES ($1, $2, 1, 1)
+         ON CONFLICT (user_id, activity_date)
+         DO UPDATE SET
+           points_earned = user_daily_activity.points_earned + 1,
+           flashcards_practiced = user_daily_activity.flashcards_practiced + 1,
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING points_earned, daily_goal_met`,
+        [userId, today],
+      );
+
+      const todayPoints = activityResult.rows[0].points_earned;
+      const dailyGoalMet = activityResult.rows[0].daily_goal_met;
+
+      // Check if daily goal just reached — update streak (same logic as logStreakPoints)
+      if (todayPoints >= 20 && !dailyGoalMet) {
+        await pool.query(
+          `UPDATE user_daily_activity SET daily_goal_met = true WHERE user_id = $1 AND activity_date = $2`,
+          [userId, today],
+        );
+
+        const streakResult = await pool.query(
+          `SELECT * FROM user_streak WHERE user_id = $1`,
+          [userId],
+        );
+
+        let currentStreak = 0;
+        let longestStreak = 0;
+
+        if (streakResult.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO user_streak (user_id, current_streak, longest_streak, last_goal_date)
+             VALUES ($1, 1, 1, $2)`,
+            [userId, today],
+          );
+        } else {
+          const lastGoalDate = streakResult.rows[0].last_goal_date;
+          currentStreak = streakResult.rows[0].current_streak;
+          longestStreak = streakResult.rows[0].longest_streak;
+
+          if (lastGoalDate) {
+            const lastGoalStr = new Date(lastGoalDate)
+              .toISOString()
+              .split("T")[0];
+            if (lastGoalStr === yesterday) {
+              currentStreak += 1;
+            } else if (lastGoalStr === today) {
+              if (currentStreak === 0) currentStreak = 1;
+            } else {
+              currentStreak = 1;
+            }
+          } else {
+            currentStreak = 1;
+          }
+
+          if (currentStreak > longestStreak) longestStreak = currentStreak;
+
+          await pool.query(
+            `UPDATE user_streak
+             SET current_streak = $1, longest_streak = $2, last_goal_date = $3, streak_updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = $4`,
+            [currentStreak, longestStreak, today, userId],
+          );
+        }
+      }
+    }
+
     res.status(200).json({ msg: "Flipped card saved" });
   } catch (err) {
     console.error("Error saving flipped card:", err);
@@ -315,7 +396,7 @@ async function saveFlippedCard(req, res) {
 
 module.exports = {
   getStreakData,
-  logFlashcardActivity,
+  logStreakPoints,
   getLastChapterProgress,
   saveFlippedCard,
 };

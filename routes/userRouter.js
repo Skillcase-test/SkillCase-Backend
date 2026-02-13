@@ -39,4 +39,8 @@ router.post(
   userController.completeArticleEducation,
 );
 
+// Profile Routes
+router.get("/profile", authMiddleware, userController.getProfile);
+router.put("/profile", authMiddleware, userController.updateProfile);
+
 module.exports = router;
