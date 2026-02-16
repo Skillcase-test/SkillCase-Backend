@@ -146,7 +146,8 @@ async function getAllUsers(req, res) {
         current_profeciency_level,
         signup_source,
         created_at,
-        last_activity_at
+        last_activity_at,
+        is_paid
       FROM app_user
       WHERE role = 'user'
       ORDER BY created_at DESC
