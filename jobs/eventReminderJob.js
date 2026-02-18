@@ -60,7 +60,7 @@ async function processEventReminders() {
     const result = await pool.query(query);
 
     console.log(
-      `[EventReminder] Found ${result.rows.length} reminders to send`
+      `[EventReminder] Found ${result.rows.length} reminders to send`,
     );
 
     // Track successfully sent reminders for batch update
@@ -78,12 +78,12 @@ async function processEventReminders() {
         sentIds.push(reg.registration_id);
 
         console.log(
-          `[EventReminder] Sent reminder to ${reg.name} for ${reg.event_title}`
+          `[EventReminder] Sent reminder to ${reg.name} for ${reg.event_title}`,
         );
       } catch (err) {
         console.error(
           `[EventReminder] Failed for registration ${reg.registration_id}:`,
-          err
+          err,
         );
       }
     }
@@ -92,10 +92,10 @@ async function processEventReminders() {
     if (sentIds.length > 0) {
       await pool.query(
         "UPDATE event_registration SET reminder_sent = TRUE WHERE registration_id = ANY($1::int[])",
-        [sentIds]
+        [sentIds],
       );
       console.log(
-        `[EventReminder] Batch updated ${sentIds.length} registrations as sent`
+        `[EventReminder] Batch updated ${sentIds.length} registrations as sent`,
       );
     }
   } catch (err) {
@@ -106,11 +106,15 @@ async function processEventReminders() {
 function initEventReminderJob() {
   console.log("[EventReminder] Initializing job scheduler...");
 
-  // Run at 5, 6, 7, 8, 9, 10 PM IST (11:30, 12:30, 13:30, 14:30, 15:30, 16:30 UTC)
-  cron.schedule("30 11-16 * * *", processEventReminders);
+  // Run at 5:00, 5:45, 6:30, 7:15, 8:00, 8:45, 9:30, 10:00 PM IST (11:30, 12:15, 13:00, 13:45, 14:30, 15:15, 16:00, 16:30 UTC)
+  // Only up to 10:00 PM, not after
+  cron.schedule(
+    "30 11 * * *,15 12 * * *,0 13 * * *,45 13 * * *,30 14 * * *,15 15 * * *,0 16 * * *,30 16 * * *",
+    processEventReminders,
+  );
 
   console.log(
-    "[EventReminder] Job scheduled to run hourly from 5 PM to 10 PM IST"
+    "[EventReminder] Job scheduled to run at 5:00, 5:45, 6:30, 7:15, 8:00, 8:45, 9:30, and 10:00 PM IST",
   );
 }
 
