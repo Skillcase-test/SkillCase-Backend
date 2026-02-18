@@ -106,15 +106,22 @@ async function processEventReminders() {
 function initEventReminderJob() {
   console.log("[EventReminder] Initializing job scheduler...");
 
-  // Run at 5:00, 5:45, 6:30, 7:15, 8:00, 8:45, 9:30, 10:00 PM IST (11:30, 12:15, 13:00, 13:45, 14:30, 15:15, 16:00, 16:30 UTC)
-  // Only up to 10:00 PM, not after
-  cron.schedule(
-    "30 11 * * *,15 12 * * *,0 13 * * *,45 13 * * *,30 14 * * *,15 15 * * *,0 16 * * *,30 16 * * *",
-    processEventReminders,
-  );
+  // Every 45 minutes from 5:00 PM to 9:30 PM IST (UTC+5:30)
+  // Explicit UTC times:
+  const schedules = [
+    "30 11 * * *", // 5:00 PM IST
+    "15 12 * * *", // 5:45 PM IST
+    "0 13 * * *",  // 6:30 PM IST
+    "45 13 * * *", // 7:15 PM IST
+    "30 14 * * *", // 8:00 PM IST
+    "15 15 * * *", // 8:45 PM IST
+    "0 16 * * *",  // 9:30 PM IST
+  ];
+
+  schedules.forEach((schedule) => cron.schedule(schedule, processEventReminders));
 
   console.log(
-    "[EventReminder] Job scheduled to run at 5:00, 5:45, 6:30, 7:15, 8:00, 8:45, 9:30, and 10:00 PM IST",
+    "[EventReminder] Job scheduled every 45 minutes from 5:00 PM to 9:30 PM IST",
   );
 }
 
