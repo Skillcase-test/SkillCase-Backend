@@ -146,7 +146,6 @@ async function checkAnswers(req, res) {
         const stripPunctuation = (str) => str.replace(/[.,!?;:'"()]/g, '').replace(/\s+/g, ' ').trim();
         const correctText = stripPunctuation((q.correct || q.correct_answer || "").toLowerCase());
         const userText = stripPunctuation((userAnswer || "").toLowerCase());
-        console.log("[fill_typing] correct:", correctText, "user:", userText);
         isCorrect = userText === correctText;
       } else if (q.type === "fill_options" || q.type === "fill_blank_options") {
         // Select from options: string comparison
@@ -156,7 +155,6 @@ async function checkAnswers(req, res) {
         const stripPunctuation = (str) => str.replace(/[.,!?;:'"()]/g, '').replace(/\s+/g, ' ').trim();
         const correctText = stripPunctuation((q.correct_sentence || q.correct || "").toLowerCase());
         const userText = stripPunctuation((userAnswer || "").toLowerCase());
-        console.log("[sentence_correction] correct:", correctText, "user:", userText);
         isCorrect = userText === correctText;
       } else if (q.type === "sentence_ordering" || q.type === "sentence_reorder") {
         // Order words: compare arrays or joined strings

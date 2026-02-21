@@ -1,3 +1,4 @@
+process.env.TZ = "UTC";
 require("dotenv").config();
 require("./services/firebaseService");
 const db = require("./util/db");
@@ -34,6 +35,12 @@ const eventAdminRouter = require("./routes/eventAdminRouter");
 
 const a2Router = require("./routes/a2/a2Router");
 const a2AdminRouter = require("./routes/a2/a2AdminRouter");
+
+// Hardcore Test Module
+const examRouter = require("./routes/examRouter");
+const examAdminRouter = require("./routes/examAdminRouter");
+const batchRouter = require("./routes/batchRouter");
+const examAudioRouter = require("./routes/examAudioRouter");
 
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
@@ -117,6 +124,22 @@ app.use(
 app.use("/api/a2", authMiddleware, a2Router);
 app.use("/api/admin/a2", authMiddleware, authorizeRole("admin"), a2AdminRouter);
 
+// Hardcore Test Module
+app.use("/api/exam-audio", examAudioRouter);
+app.use("/api/exam", authMiddleware, examRouter);
+app.use(
+  "/api/admin/exam",
+  authMiddleware,
+  authorizeRole("admin"),
+  examAdminRouter,
+);
+app.use(
+  "/api/admin/batch",
+  authMiddleware,
+  authorizeRole("admin"),
+  batchRouter,
+);
+
 app.use("/api/sso", ssoRouter);
 
 app.get("/health", (req, res) => {
@@ -131,7 +154,7 @@ app.use("/api/streak", authMiddleware, streakRouter);
 
 app.use("/updates", express.static("public/updates")); // Serve bundles
 app.use("/api/updates", updateRouter);
-app.use("/api/api/updates", updateRouter); 
+app.use("/api/api/updates", updateRouter);
 
 app.use(
   "/api/notifications",

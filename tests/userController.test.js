@@ -222,10 +222,12 @@ describe('userController', () => {
         rows: [{
           user_id: 'test-user-id',
           username: 'testuser',
+          fullname: 'Test User',
           role: 'user',
           current_profeciency_level: 'A2',
           onboarding_completed: true,
-          a2_onboarding_completed: false
+          a2_onboarding_completed: false,
+          profile_pic_url: ''
         }]
       });
 
@@ -236,10 +238,12 @@ describe('userController', () => {
         user: {
           user_id: 'test-user-id',
           username: 'testuser',
+          fullname: 'Test User',
           role: 'user',
           user_prof_level: 'A2',
           onboarding_completed: true,
-          a2_onboarding_completed: false
+          a2_onboarding_completed: false,
+          profile_pic_url: ''
         }
       });
     });

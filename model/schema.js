@@ -804,6 +804,105 @@ CREATE INDEX IF NOT EXISTS idx_a2_progress_module ON a2_user_progress(module, ch
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS a2_onboarding_completed BOOLEAN DEFAULT FALSE;
 `;
 
+const createHardcoreTestTables = `
+-- BATCH MANAGEMENT
+CREATE TABLE IF NOT EXISTS batch (
+  batch_id SERIAL PRIMARY KEY,
+  batch_name VARCHAR(255) NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_batch (
+  user_id VARCHAR(50) NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+  batch_id INTEGER NOT NULL REFERENCES batch(batch_id) ON DELETE CASCADE,
+  assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, batch_id)
+);
+
+-- HARDCORE TEST (EXAM METADATA)
+CREATE TABLE IF NOT EXISTS hardcore_test (
+  test_id SERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  proficiency_level VARCHAR(50) NOT NULL,
+  duration_minutes INTEGER NOT NULL,
+  total_questions INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  results_visible BOOLEAN DEFAULT false,
+  created_by VARCHAR(50) REFERENCES app_user(user_id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- INDIVIDUAL QUESTIONS (PER-QUESTION AUDIO)
+CREATE TABLE IF NOT EXISTS hardcore_test_question (
+  question_id SERIAL PRIMARY KEY,
+  test_id INTEGER NOT NULL REFERENCES hardcore_test(test_id) ON DELETE CASCADE,
+  question_order INTEGER NOT NULL,
+  question_type VARCHAR(50) NOT NULL,
+  question_data JSONB NOT NULL,
+  audio_url TEXT,
+  audio_public_id TEXT,
+  points INTEGER DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_hcq_test ON hardcore_test_question(test_id);
+CREATE INDEX IF NOT EXISTS idx_hcq_order ON hardcore_test_question(test_id, question_order);
+
+-- VISIBILITY RULES (BATCH + INDIVIDUAL)
+CREATE TABLE IF NOT EXISTS hardcore_test_visibility (
+  id SERIAL PRIMARY KEY,
+  test_id INTEGER NOT NULL REFERENCES hardcore_test(test_id) ON DELETE CASCADE,
+  batch_id INTEGER REFERENCES batch(batch_id) ON DELETE CASCADE,
+  user_id VARCHAR(50) REFERENCES app_user(user_id) ON DELETE CASCADE,
+  CHECK (batch_id IS NOT NULL OR user_id IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_hctv_test ON hardcore_test_visibility(test_id);
+CREATE INDEX IF NOT EXISTS idx_hctv_batch ON hardcore_test_visibility(batch_id);
+CREATE INDEX IF NOT EXISTS idx_hctv_user ON hardcore_test_visibility(user_id);
+
+-- STUDENT EXAM SESSION
+CREATE TABLE IF NOT EXISTS hardcore_test_submission (
+  submission_id SERIAL PRIMARY KEY,
+  test_id INTEGER NOT NULL REFERENCES hardcore_test(test_id) ON DELETE CASCADE,
+  user_id VARCHAR(50) NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+  started_at TIMESTAMP,
+  finished_at TIMESTAMP,
+  status VARCHAR(20) DEFAULT 'not_started',
+  warning_count INTEGER DEFAULT 0,
+  score DECIMAL(5,2),
+  total_points INTEGER,
+  earned_points DECIMAL(10,4) DEFAULT 0,
+  is_reopened BOOLEAN DEFAULT false,
+  UNIQUE(test_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_hcts_user ON hardcore_test_submission(user_id);
+CREATE INDEX IF NOT EXISTS idx_hcts_test ON hardcore_test_submission(test_id);
+
+-- PER-QUESTION ANSWERS
+CREATE TABLE IF NOT EXISTS hardcore_test_answer (
+  answer_id SERIAL PRIMARY KEY,
+  submission_id INTEGER NOT NULL REFERENCES hardcore_test_submission(submission_id) ON DELETE CASCADE,
+  question_id INTEGER NOT NULL REFERENCES hardcore_test_question(question_id) ON DELETE CASCADE,
+  user_answer JSONB,
+  is_correct BOOLEAN,
+  points_earned DECIMAL(10,4) DEFAULT 0,
+  answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(submission_id, question_id)
+);
+CREATE INDEX IF NOT EXISTS idx_hcta_sub ON hardcore_test_answer(submission_id);
+
+ALTER TABLE hardcore_test
+  ADD COLUMN IF NOT EXISTS available_from TIMESTAMPTZ DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS available_until TIMESTAMPTZ DEFAULT NULL;
+
+-- Ensure existing columns are TIMESTAMPTZ
+ALTER TABLE hardcore_test
+  ALTER COLUMN available_from TYPE TIMESTAMPTZ USING available_from AT TIME ZONE 'UTC',
+  ALTER COLUMN available_until TYPE TIMESTAMPTZ USING available_until AT TIME ZONE 'UTC';
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -841,4 +940,5 @@ module.exports = {
   alterTable,
   createEventOverride,
   createA2Tables,
+  createHardcoreTestTables,
 };

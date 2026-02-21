@@ -10,8 +10,8 @@ const {
 // 1. Move CURRENT_VERSION value to PREVIOUS_VERSION
 // 2. Set CURRENT_VERSION to the new version
 // 3. Deploy the new bundle.zip to /public/updates/
-const CURRENT_VERSION = "1.0.4";
-const PREVIOUS_VERSION = "1.0.3"; // Only this version will receive OTA updates
+const CURRENT_VERSION = "1.0.5";
+const PREVIOUS_VERSION = "1.0.4"; // Used for stats tracking — highest version eligible for OTA
 
 const BUNDLE_URL = `${process.env.BACKEND_URL}/updates/bundle.zip`;
 const PLAY_STORE_URL =
@@ -66,13 +66,16 @@ const checkIfNeedUpdate = async (req, res) => {
     // Do NOT try to downgrade them
     status = UPDATE_STATUS.NEWER_VERSION;
     message = "Development version detected";
-  } else if (isVersionEqual(appVersion, PREVIOUS_VERSION)) {
-    // User is on the immediately previous version - eligible for OTA
+  } else if (
+    isVersionGreaterThan(appVersion, "1.0.2") &&
+    isVersionLessThan(appVersion, CURRENT_VERSION)
+  ) {
+    // Users on 1.0.3 or 1.0.4 are eligible for OTA update
     status = UPDATE_STATUS.OTA_AVAILABLE;
     url = BUNDLE_URL;
     message = "OTA update available";
   } else {
-    // User is on an older version - redirect to Play Store
+    // User is on 1.0.2 or below — too old for OTA, redirect to Play Store
     status = UPDATE_STATUS.PLAY_STORE_UPDATE;
     playStoreUrl = PLAY_STORE_URL;
     message = "Please update from the Play Store for the best experience";

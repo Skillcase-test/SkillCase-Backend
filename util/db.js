@@ -65,6 +65,9 @@ async function initDb(pool) {
     await pool.query(queries.createEventOverride);
     await pool.query(queries.createA2Tables);
 
+    //Test
+    await pool.query(queries.createHardcoreTestTables);
+
     console.log("Tables created or already exist!");
   } catch (err) {
     console.error(`Error occurred while creating tables: ${err}`);

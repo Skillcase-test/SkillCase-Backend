@@ -132,109 +132,119 @@ async function submitTest(req, res) {
     // Use questions from request if provided (shuffled from frontend)
     // Otherwise fall back to DB fetch (unshuffled - less reliable for scoring)
     let questions = req.body.questions;
-    
+
     if (!questions || !Array.isArray(questions)) {
       // Fallback: Get questions from DB (not ideal - will be unshuffled)
       const setResult = await pool.query(
         `SELECT questions FROM a2_test_set
          WHERE topic_id = $1 AND level = $2 AND set_number = $3`,
-        [topicId, level, setNumber]
+        [topicId, level, setNumber],
       );
       if (setResult.rows.length === 0) {
         return res.status(404).json({ error: "Test set not found" });
       }
       questions = setResult.rows[0].questions;
     }
-    
-    let correct = 0;
 
-    console.log("=== BACKEND SCORING DEBUG ===");
-    console.log("Total questions:", questions.length);
-    console.log("Total answers:", answers.length);
+    let correct = 0;
 
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       const userAnswer = answers[i];
       let isCorrect = false;
-      
-      console.log(`\n--- Q${i} ---`);
-      console.log("Type:", q.type);
-      
+
       switch (q.type) {
-        case 'matching':
+        case "matching":
           // Compare pairs arrays - user provides [{de, en}, ...]
           // q.pairs contains the correct pairs
           if (Array.isArray(userAnswer) && Array.isArray(q.pairs)) {
-            const userPairStr = userAnswer.map(p => `${p.de}-${p.en}`).sort().join('|');
-            const correctPairStr = q.pairs.map(p => `${p.de}-${p.en}`).sort().join('|');
+            const userPairStr = userAnswer
+              .map((p) => `${p.de}-${p.en}`)
+              .sort()
+              .join("|");
+            const correctPairStr = q.pairs
+              .map((p) => `${p.de}-${p.en}`)
+              .sort()
+              .join("|");
             isCorrect = userPairStr === correctPairStr;
-            console.log(`Matching: "${userPairStr}" === "${correctPairStr}" = ${isCorrect}`);
           }
           break;
-          
-        case 'fill_options':
-        case 'mcq_single':
+
+        case "fill_options":
+        case "mcq_single":
           // Frontend sends the VALUE (string), compare directly
           const correctVal = q.correct;
           isCorrect = userAnswer === correctVal;
-          console.log(`MCQ/Fill compare: "${userAnswer}" === "${correctVal}" = ${isCorrect}`);
+
           break;
-          
-        case 'fill_typing':
+
+        case "fill_typing":
           // String comparison, case insensitive
-          const correctTyping = String(q.correct || '').toLowerCase().trim();
-          const userTyping = String(userAnswer || '').toLowerCase().trim();
+          const correctTyping = String(q.correct || "")
+            .toLowerCase()
+            .trim();
+          const userTyping = String(userAnswer || "")
+            .toLowerCase()
+            .trim();
           isCorrect = userTyping === correctTyping;
-          console.log(`Typing compare: "${userTyping}" === "${correctTyping}" = ${isCorrect}`);
           break;
-          
-        case 'sentence_correction':
+
+        case "sentence_correction":
           // Uses correct_sentence field - strip punctuation for lenient comparison
-          const correctSentence = String(q.correct_sentence || '').toLowerCase().trim().replace(/[.,!?;:]+$/g, '');
-          const userSentence = String(userAnswer || '').toLowerCase().trim().replace(/[.,!?;:]+$/g, '');
+          const correctSentence = String(q.correct_sentence || "")
+            .toLowerCase()
+            .trim()
+            .replace(/[.,!?;:]+$/g, "");
+          const userSentence = String(userAnswer || "")
+            .toLowerCase()
+            .trim()
+            .replace(/[.,!?;:]+$/g, "");
           isCorrect = userSentence === correctSentence;
-          console.log(`Sentence correction: "${userSentence}" === "${correctSentence}" = ${isCorrect}`);
-          break;
           
-        case 'mcq_multi':
+          break;
+
+        case "mcq_multi":
           // Array comparison - both should be arrays of selected values
           if (Array.isArray(userAnswer) && Array.isArray(q.correct)) {
-            const userSorted = [...userAnswer].sort().join(',');
-            const correctSorted = [...q.correct].sort().join(',');
+            const userSorted = [...userAnswer].sort().join(",");
+            const correctSorted = [...q.correct].sort().join(",");
             isCorrect = userSorted === correctSorted;
-            console.log(`Multi compare: "${userSorted}" === "${correctSorted}" = ${isCorrect}`);
+            
           }
           break;
-          
-        case 'true_false':
+
+        case "true_false":
           // Boolean comparison
           isCorrect = userAnswer === q.correct;
-          console.log(`Boolean compare: ${userAnswer} === ${q.correct} = ${isCorrect}`);
-          break;
           
-        case 'sentence_ordering':
+          break;
+
+        case "sentence_ordering":
           // Uses correct_order field - array of words in correct order
           if (Array.isArray(userAnswer) && Array.isArray(q.correct_order)) {
-            const userOrder = userAnswer.join(' ');
-            const correctOrder = q.correct_order.join(' ');
+            const userOrder = userAnswer.join(" ");
+            const correctOrder = q.correct_order.join(" ");
             isCorrect = userOrder === correctOrder;
-            console.log(`Ordering: "${userOrder}" === "${correctOrder}" = ${isCorrect}`);
+            
           }
           break;
-          
+
         default:
           // Fallback string comparison
-          const defaultCorrect = String(q.correct || '').toLowerCase().trim();
-          const defaultUser = String(userAnswer || '').toLowerCase().trim();
+          const defaultCorrect = String(q.correct || "")
+            .toLowerCase()
+            .trim();
+          const defaultUser = String(userAnswer || "")
+            .toLowerCase()
+            .trim();
           isCorrect = defaultUser === defaultCorrect;
-          console.log(`Default compare: "${defaultUser}" === "${defaultCorrect}" = ${isCorrect}`);
+          
       }
-      
+
       if (isCorrect) correct++;
-      console.log(`Result: ${isCorrect ? "CORRECT" : "WRONG"}`);
+      
     }
 
-    console.log(`\n=== FINAL: ${correct}/${questions.length} ===\n`);
 
     const score = (correct / questions.length) * 100;
     const passed = score >= 60;
