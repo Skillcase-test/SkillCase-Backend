@@ -379,5 +379,169 @@ describe('hardcoreTestController', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
     });
+  }); // end recordWarning
+
+  // ─── gradeAnswer — image option support ──────────────────────────────────
+  //
+  // These tests exercise the updated gradeAnswer() logic by running a full
+  // submitExam flow where the questions contain image-type options.
+
+  describe('gradeAnswer — image option support', () => {
+    const makeSubmission = () => ({ submission_id: 's1', status: 'in_progress' });
+
+    // Helper: build a mock query sequence for submitExam
+    const mockSubmit = (questions, answers) => {
+      const perAnswer = answers.map(() => ({ rows: [] }));
+      mockQuery
+        .mockResolvedValueOnce({ rows: [makeSubmission()] })  // get submission
+        .mockResolvedValueOnce({ rows: questions })           // get questions
+        .mockResolvedValueOnce({ rows: answers })             // get saved answers
+        .mockResolvedValue({ rows: [] });                     // update answer + submission (multiple)
+    };
+
+    test('mcq_single: grades correctly when options contain images (index-based)', async () => {
+      const imgA = { type: 'image', url: 'https://cdn/a.png', alt: 'A' };
+      const imgB = { type: 'image', url: 'https://cdn/b.png', alt: 'B' };
+      const questions = [
+        {
+          question_id: 'q1',
+          question_type: 'mcq_single',
+          // correct=1 means imgB is correct
+          question_data: { options: [imgA, imgB], correct: 1 },
+          points: 2,
+        },
+      ];
+      const answers = [
+        { answer_id: 'a1', question_id: 'q1', user_answer: 1, submission_id: 's1' }, // correct
+      ];
+      mockSubmit(questions, answers);
+
+      await controller.submitExam(
+        { params: { testId: 'e1' }, user: { user_id: 'u1' } },
+        mockRes
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ earned_points: 2, total_points: 2, score: 100 })
+      );
+    });
+
+    test('mcq_single: wrong index answer with image options scores 0', async () => {
+      const imgA = { type: 'image', url: 'https://cdn/a.png', alt: 'A' };
+      const imgB = { type: 'image', url: 'https://cdn/b.png', alt: 'B' };
+      const questions = [
+        {
+          question_id: 'q1',
+          question_type: 'mcq_single',
+          question_data: { options: [imgA, imgB], correct: 0 }, // imgA is correct
+          points: 2,
+        },
+      ];
+      const answers = [
+        { answer_id: 'a1', question_id: 'q1', user_answer: 1, submission_id: 's1' }, // wrong
+      ];
+      mockSubmit(questions, answers);
+
+      await controller.submitExam(
+        { params: { testId: 'e1' }, user: { user_id: 'u1' } },
+        mockRes
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ earned_points: 0, total_points: 2, score: 0 })
+      );
+    });
+
+    test('mcq_multi: grades correctly when options contain images (index arrays)', async () => {
+      const imgA = { type: 'image', url: 'https://cdn/a.png', alt: 'A' };
+      const imgB = { type: 'image', url: 'https://cdn/b.png', alt: 'B' };
+      const imgC = { type: 'image', url: 'https://cdn/c.png', alt: 'C' };
+      const questions = [
+        {
+          question_id: 'q1',
+          question_type: 'mcq_multi',
+          // correct = indices [0, 2]
+          question_data: { options: [imgA, imgB, imgC], correct: [0, 2] },
+          points: 3,
+        },
+      ];
+      const answers = [
+        { answer_id: 'a1', question_id: 'q1', user_answer: [2, 0], submission_id: 's1' }, // correct (order doesn't matter)
+      ];
+      mockSubmit(questions, answers);
+
+      await controller.submitExam(
+        { params: { testId: 'e1' }, user: { user_id: 'u1' } },
+        mockRes
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ earned_points: 3, total_points: 3 })
+      );
+    });
+
+    test('fill_options: grades correctly when options contain images (index-based)', async () => {
+      const imgA = { type: 'image', url: 'https://cdn/a.png', alt: 'A' };
+      const imgB = { type: 'image', url: 'https://cdn/b.png', alt: 'B' };
+      const questions = [
+        {
+          question_id: 'q1',
+          question_type: 'fill_options',
+          question_data: { options: [imgA, imgB], correct: 0 }, // imgA is correct
+          points: 1,
+        },
+      ];
+      const answers = [
+        { answer_id: 'a1', question_id: 'q1', user_answer: 0, submission_id: 's1' }, // correct
+      ];
+      mockSubmit(questions, answers);
+
+      await controller.submitExam(
+        { params: { testId: 'e1' }, user: { user_id: 'u1' } },
+        mockRes
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ earned_points: 1, total_points: 1 })
+      );
+    });
+
+    test('backward compat: text-based mcq_single still grades by option string', async () => {
+      const questions = [
+        {
+          question_id: 'q1',
+          question_type: 'mcq_single',
+          question_data: { options: ['Paris', 'London', 'Berlin'], correct: 'London' },
+          points: 1,
+        },
+      ];
+      const answers = [
+        // student sends index 1 → options[1] = 'London' = correct
+        { answer_id: 'a1', question_id: 'q1', user_answer: 1, submission_id: 's1' },
+      ];
+      mockSubmit(questions, answers);
+
+      await controller.submitExam(
+        { params: { testId: 'e1' }, user: { user_id: 'u1' } },
+        mockRes
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ earned_points: 1, total_points: 1 })
+      );
+    });
+
+    test('image_block is excluded from NON_ANSWERABLE_TYPES check', async () => {
+      // saveAnswer with an image_block question type should return 400
+      mockQuery.mockResolvedValueOnce({ rows: [{ question_type: 'image_block' }] });
+
+      await controller.saveAnswer(
+        { params: { testId: 'e1' }, user: { user_id: 'u1' }, body: { question_id: 'q1', answer: null } },
+        mockRes
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ msg: 'Cannot save answer for this item type' });
+    });
   });
 });

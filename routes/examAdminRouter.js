@@ -3,28 +3,41 @@ const router = express.Router();
 const multer = require("multer");
 const adminController = require("../controllers/hardcoreTestAdminController");
 
-// Multer config for audio uploads (memory storage)
+// Multer config — accepts audio AND image files for exam questions
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max per file
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
-      "audio/mpeg",
-      "audio/mp3",
-      "audio/wav",
-      "audio/ogg",
-      "audio/webm",
-      "audio/m4a",
-      "audio/x-m4a",
-      "audio/mp4",
+      // Audio
+      "audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg",
+      "audio/webm", "audio/m4a", "audio/x-m4a", "audio/mp4",
+      // Images
+      "image/jpeg", "image/jpg", "image/png", "image/gif",
+      "image/webp", "image/svg+xml",
     ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only audio files are allowed"), false);
+      cb(new Error("Only audio or image files are allowed"), false);
     }
   },
 });
+
+// Fields accepted per question request:
+//   audio            — optional audio file
+//   question_image_file — optional image shown above question text
+//   image_block_file    — optional image for image_block question type
+//   option_image_file_0 … option_image_file_9 — optional image per option slot
+const questionUploadFields = upload.fields([
+  { name: "audio", maxCount: 1 },
+  { name: "question_image_file", maxCount: 1 },
+  { name: "image_block_file", maxCount: 1 },
+  ...Array.from({ length: 10 }, (_, i) => ({
+    name: `option_image_file_${i}`,
+    maxCount: 1,
+  })),
+]);
 
 // Exam CRUD
 router.post("/create", adminController.createExam);
@@ -36,12 +49,12 @@ router.delete("/:testId", adminController.deleteExam);
 // Questions (with optional audio upload)
 router.post(
   "/:testId/question",
-  upload.single("audio"),
+  questionUploadFields,
   adminController.addQuestion,
 );
 router.put(
   "/:testId/question/:questionId",
-  upload.single("audio"),
+  questionUploadFields,
   adminController.editQuestion,
 );
 router.delete("/:testId/question/:questionId", adminController.deleteQuestion);

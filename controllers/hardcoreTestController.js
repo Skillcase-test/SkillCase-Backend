@@ -5,6 +5,7 @@ const NON_ANSWERABLE_TYPES = new Set([
   "reading_passage",
   "audio_block",
   "content_block",
+  "image_block",
 ]);
 
 function isCompositeItemCorrect(item, itemAnswer, stripPunctuation) {
@@ -71,6 +72,17 @@ function getTimeRemaining(startedAt, durationMinutes) {
   };
 }
 
+// HELPER: Check whether any option in the array is an image object.
+// When options contain images, `correct` is stored as an index (integer).
+function hasImageOptions(options) {
+  return (
+    Array.isArray(options) &&
+    options.some(
+      (opt) => opt && typeof opt === "object" && opt.type === "image",
+    )
+  );
+}
+
 // HELPER: Grade a single answer
 function gradeAnswer(question, userAnswer) {
   const qType = question.question_type;
@@ -85,8 +97,13 @@ function gradeAnswer(question, userAnswer) {
   switch (qType) {
     case "mcq_single":
     case "mcq": {
-      if (typeof userAnswer === "number" && qData.options) {
-        return qData.options[userAnswer] === qData.correct;
+      const opts = qData.options;
+      if (hasImageOptions(opts)) {
+        // correct is an index; compare directly
+        return typeof userAnswer === "number" && userAnswer === qData.correct;
+      }
+      if (typeof userAnswer === "number" && opts) {
+        return opts[userAnswer] === qData.correct;
       }
       return userAnswer === qData.correct;
     }
@@ -95,7 +112,13 @@ function gradeAnswer(question, userAnswer) {
       const correctArr = qData.correct || [];
       const userArr = Array.isArray(userAnswer) ? userAnswer : [];
       if (correctArr.length !== userArr.length) return false;
-      // User sends indices, compare option texts
+      if (hasImageOptions(qData.options)) {
+        // Both correctArr and userArr are arrays of indices
+        const sortedCorrect = [...correctArr].sort((a, b) => a - b);
+        const sortedUser = [...userArr].sort((a, b) => a - b);
+        return sortedCorrect.every((c, i) => c === sortedUser[i]);
+      }
+      // Text-based comparison (existing behaviour)
       const userTexts = userArr
         .map((idx) => qData.options?.[idx])
         .filter(Boolean);
@@ -118,6 +141,10 @@ function gradeAnswer(question, userAnswer) {
 
     case "fill_options":
     case "fill_blank_options": {
+      if (hasImageOptions(qData.options)) {
+        // correct is stored as an index; userAnswer is also an index
+        return typeof userAnswer === "number" && userAnswer === qData.correct;
+      }
       return userAnswer === qData.correct;
     }
 
@@ -225,7 +252,7 @@ async function getVisibleExams(req, res) {
         ht.test_id, ht.title, ht.description, ht.duration_minutes, 
         ht.is_active, ht.results_visible, ht.created_at,
         ht.available_from, ht.available_until,
-        (SELECT COUNT(*) FROM hardcore_test_question WHERE test_id = ht.test_id AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block')) AS total_questions,
+        (SELECT COUNT(*) FROM hardcore_test_question WHERE test_id = ht.test_id AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block', 'image_block')) AS total_questions,
         s.submission_id, s.status, s.started_at, s.finished_at, s.score
       FROM hardcore_test ht
       INNER JOIN hardcore_test_visibility htv ON ht.test_id = htv.test_id

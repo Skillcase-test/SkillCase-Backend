@@ -6,6 +6,7 @@ const NON_QUESTION_TYPES = new Set([
   "reading_passage",
   "audio_block",
   "content_block",
+  "image_block",
 ]);
 
 // Helper: upload audio buffer to Cloudinary
@@ -14,6 +15,21 @@ async function uploadAudioToCloudinary(buffer) {
     cloudinary.uploader
       .upload_stream(
         { resource_type: "video", folder: "hardcore-exam-audio" },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        },
+      )
+      .end(buffer);
+  });
+}
+
+// Helper: upload image buffer to Cloudinary
+async function uploadImageToCloudinary(buffer) {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader
+      .upload_stream(
+        { resource_type: "image", folder: "hardcore-exam-images" },
         (error, result) => {
           if (error) reject(error);
           else resolve(result);
@@ -120,7 +136,7 @@ async function createExam(req, res) {
   }
 }
 
-// ADD QUESTION (with optional audio)
+// ADD QUESTION (with optional audio and/or images)
 async function addQuestion(req, res) {
   const { testId } = req.params;
   const { question_type, question_data, points, audio_url } = req.body;
@@ -142,15 +158,18 @@ async function addQuestion(req, res) {
   }
 
   // Non-question types get 0 points
-  // audio_block is also a non-question but still allows audio upload
   const isNonQuestion = NON_QUESTION_TYPES.has(question_type);
   const finalPoints = isNonQuestion ? 0 : points || 1;
 
-  // audio_block needs audio upload; page_break and reading_passage do not
   const skipAudio =
     question_type === "page_break" ||
     question_type === "reading_passage" ||
-    question_type === "content_block";
+    question_type === "content_block" ||
+    question_type === "image_block";
+
+  // req.files is a dict from multer.fields()
+  const files = req.files || {};
+  const audioFileObj = files["audio"]?.[0];
 
   try {
     // Verify test exists
@@ -170,17 +189,42 @@ async function addQuestion(req, res) {
     );
     const nextOrder = orderResult.rows[0].next_order;
 
-    // Upload audio if provided (skip for page_break and reading_passage only)
+    // -- Audio upload
     let audioUrl = null;
     let audioPublicId = null;
     const linkedAudioUrl = normalizeAudioLink(audio_url);
-    if (req.file && !skipAudio) {
-      const result = await uploadAudioToCloudinary(req.file.buffer);
+    if (audioFileObj && !skipAudio) {
+      const result = await uploadAudioToCloudinary(audioFileObj.buffer);
       audioUrl = result.secure_url;
       audioPublicId = result.public_id;
     } else if (linkedAudioUrl && !skipAudio) {
       audioUrl = linkedAudioUrl;
       audioPublicId = null;
+    }
+
+    // -- Image block upload (image_block question type)
+    const imageBlockFile = files["image_block_file"]?.[0];
+    if (question_type === "image_block" && imageBlockFile) {
+      const result = await uploadImageToCloudinary(imageBlockFile.buffer);
+      parsedData.image_url = result.secure_url;
+    }
+
+    // -- Question image upload (shown above question text for any type)
+    const questionImageFile = files["question_image_file"]?.[0];
+    if (questionImageFile) {
+      const result = await uploadImageToCloudinary(questionImageFile.buffer);
+      parsedData.question_image = result.secure_url;
+    }
+
+    // -- Option image uploads: option_image_file_0 … option_image_file_9
+    if (Array.isArray(parsedData.options)) {
+      for (let i = 0; i < parsedData.options.length; i++) {
+        const optFile = files[`option_image_file_${i}`]?.[0];
+        if (optFile) {
+          const result = await uploadImageToCloudinary(optFile.buffer);
+          parsedData.options[i] = { type: "image", url: result.secure_url, alt: "" };
+        }
+      }
     }
 
     const insertResult = await pool.query(
@@ -202,7 +246,7 @@ async function addQuestion(req, res) {
     await pool.query(
       `UPDATE hardcore_test SET total_questions = (
         SELECT COUNT(*) FROM hardcore_test_question
-        WHERE test_id = $1 AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block')
+        WHERE test_id = $1 AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block', 'image_block')
       ), updated_at = CURRENT_TIMESTAMP WHERE test_id = $1`,
       [testId],
     );
@@ -228,6 +272,10 @@ async function editQuestion(req, res) {
     }
   }
 
+  // req.files is a dict from multer.fields()
+  const files = req.files || {};
+  const audioFileObj = files["audio"]?.[0];
+
   try {
     // Get existing question for audio cleanup
     const existing = await pool.query(
@@ -243,23 +291,52 @@ async function editQuestion(req, res) {
     const linkedAudioUrl = normalizeAudioLink(audio_url);
     const nextType = question_type || existing.rows[0].question_type;
 
+    const skipAudio =
+      nextType === "page_break" ||
+      nextType === "reading_passage" ||
+      nextType === "content_block" ||
+      nextType === "image_block";
+
     // If new audio uploaded, delete old and upload new
-    if (req.file) {
+    if (audioFileObj && !skipAudio) {
       await deleteAudioFromCloudinary(audioPublicId);
-      const result = await uploadAudioToCloudinary(req.file.buffer);
+      const result = await uploadAudioToCloudinary(audioFileObj.buffer);
       audioUrl = result.secure_url;
       audioPublicId = result.public_id;
     } else if (
       linkedAudioUrl &&
-      nextType !== "page_break" &&
-      nextType !== "reading_passage" &&
-      nextType !== "content_block"
+      !skipAudio
     ) {
       if (audioPublicId) {
         await deleteAudioFromCloudinary(audioPublicId);
       }
       audioUrl = linkedAudioUrl;
       audioPublicId = null;
+    }
+
+    // -- Image block upload
+    const imageBlockFile = files["image_block_file"]?.[0];
+    if (nextType === "image_block" && imageBlockFile) {
+      const result = await uploadImageToCloudinary(imageBlockFile.buffer);
+      parsedData.image_url = result.secure_url;
+    }
+
+    // -- Question image upload
+    const questionImageFile = files["question_image_file"]?.[0];
+    if (questionImageFile) {
+      const result = await uploadImageToCloudinary(questionImageFile.buffer);
+      parsedData.question_image = result.secure_url;
+    }
+
+    // -- Option image uploads
+    if (Array.isArray(parsedData?.options)) {
+      for (let i = 0; i < parsedData.options.length; i++) {
+        const optFile = files[`option_image_file_${i}`]?.[0];
+        if (optFile) {
+          const result = await uploadImageToCloudinary(optFile.buffer);
+          parsedData.options[i] = { type: "image", url: result.secure_url, alt: "" };
+        }
+      }
     }
 
     const isNonQuestion = NON_QUESTION_TYPES.has(nextType);
@@ -292,7 +369,7 @@ async function editQuestion(req, res) {
     await pool.query(
       `UPDATE hardcore_test SET total_questions = (
         SELECT COUNT(*) FROM hardcore_test_question
-        WHERE test_id = $1 AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block')
+        WHERE test_id = $1 AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block', 'image_block')
       ), updated_at = CURRENT_TIMESTAMP WHERE test_id = $1`,
       [testId],
     );
@@ -341,7 +418,7 @@ async function deleteQuestion(req, res) {
     await pool.query(
       `UPDATE hardcore_test SET total_questions = (
         SELECT COUNT(*) FROM hardcore_test_question
-        WHERE test_id = $1 AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block')
+        WHERE test_id = $1 AND question_type NOT IN ('page_break', 'reading_passage', 'audio_block', 'content_block', 'image_block')
       ), updated_at = CURRENT_TIMESTAMP WHERE test_id = $1`,
       [testId],
     );
