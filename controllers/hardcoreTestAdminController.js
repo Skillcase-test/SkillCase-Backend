@@ -303,14 +303,22 @@ async function editQuestion(req, res) {
       const result = await uploadAudioToCloudinary(audioFileObj.buffer);
       audioUrl = result.secure_url;
       audioPublicId = result.public_id;
-    } else if (
-      linkedAudioUrl &&
-      !skipAudio
-    ) {
+    } else if (linkedAudioUrl && !skipAudio) {
+      // New link-based audio provided
       if (audioPublicId) {
         await deleteAudioFromCloudinary(audioPublicId);
       }
       audioUrl = linkedAudioUrl;
+      audioPublicId = null;
+    } else if (
+      !audioFileObj &&
+      audio_url !== undefined &&
+      (audio_url === "" || audio_url === null) &&
+      !skipAudio
+    ) {
+      // Audio explicitly cleared by admin
+      await deleteAudioFromCloudinary(audioPublicId);
+      audioUrl = null;
       audioPublicId = null;
     }
 
@@ -785,6 +793,124 @@ async function reorderQuestions(req, res) {
   }
 }
 
+// GET FULL SUBMISSION DETAIL (admin)
+async function getSubmissionDetail(req, res) {
+  const { submissionId } = req.params;
+  try {
+    const subResult = await pool.query(
+      `SELECT s.*, u.username, u.fullname,
+              t.title, t.duration_minutes, t.test_id
+       FROM hardcore_test_submission s
+       JOIN app_user u ON u.user_id = s.user_id
+       JOIN hardcore_test t ON t.test_id = s.test_id
+       WHERE s.submission_id = $1`,
+      [submissionId],
+    );
+    if (subResult.rows.length === 0) {
+      return res.status(404).json({ msg: 'Submission not found' });
+    }
+    const submission = subResult.rows[0];
+
+    const questionsResult = await pool.query(
+      `SELECT q.question_id, q.question_order, q.question_type,
+              q.question_data, q.audio_url, q.points,
+              a.user_answer, a.is_correct, a.points_earned
+       FROM hardcore_test_question q
+       LEFT JOIN hardcore_test_answer a
+         ON a.question_id = q.question_id AND a.submission_id = $2
+       WHERE q.test_id = $1
+       ORDER BY q.question_order ASC`,
+      [submission.test_id, submissionId],
+    );
+
+    res.json({
+      submission: {
+        submission_id: submission.submission_id,
+        username: submission.username,
+        fullname: submission.fullname,
+        status: submission.status,
+        score: submission.score,
+        earned_points: submission.earned_points,
+        total_points: submission.total_points,
+        started_at: submission.started_at,
+        finished_at: submission.finished_at,
+        exam_title: submission.title,
+      },
+      questions: questionsResult.rows,
+    });
+  } catch (err) {
+    console.error('Error getting submission detail:', err);
+    res.status(500).json({ msg: 'Failed to get submission detail' });
+  }
+}
+
+// OVERRIDE ANSWER CORRECTNESS (admin)
+async function overrideAnswer(req, res) {
+  const { submissionId, questionId } = req.params;
+  try {
+    // Get the answer row and the question's points
+    const answerResult = await pool.query(
+      `SELECT a.is_correct, a.points_earned, q.points
+       FROM hardcore_test_answer a
+       JOIN hardcore_test_question q ON q.question_id = a.question_id
+       WHERE a.submission_id = $1 AND a.question_id = $2`,
+      [submissionId, questionId],
+    );
+
+    if (answerResult.rows.length === 0) {
+      return res.status(404).json({ msg: 'Answer not found' });
+    }
+
+    const { is_correct, points } = answerResult.rows[0];
+    const newIsCorrect = !is_correct;
+    const newPointsEarned = newIsCorrect ? parseFloat(points) : 0;
+
+    // Update the answer row
+    await pool.query(
+      `UPDATE hardcore_test_answer
+       SET is_correct = $1, points_earned = $2
+       WHERE submission_id = $3 AND question_id = $4`,
+      [newIsCorrect, newPointsEarned, submissionId, questionId],
+    );
+
+    // Recalculate earned_points using stored total_points (NOT from answer rows,
+    // since unanswered questions have no rows and would make total too low)
+    const recalcResult = await pool.query(
+      `SELECT
+         COALESCE(SUM(a.points_earned), 0) AS earned_points,
+         s.total_points
+       FROM hardcore_test_answer a
+       JOIN hardcore_test_submission s ON s.submission_id = a.submission_id
+       WHERE a.submission_id = $1
+       GROUP BY s.total_points`,
+      [submissionId],
+    );
+
+    const earned_points = parseFloat(recalcResult.rows[0]?.earned_points || 0);
+    const total_points = parseFloat(recalcResult.rows[0]?.total_points || 0);
+    const score = total_points > 0
+      ? parseFloat(((earned_points / total_points) * 100).toFixed(2))
+      : 0;
+
+    await pool.query(
+      `UPDATE hardcore_test_submission
+       SET earned_points = $1, score = $2
+       WHERE submission_id = $3`,
+      [earned_points, score, submissionId],
+    );
+
+    res.json({
+      is_correct: newIsCorrect,
+      points_earned: newPointsEarned,
+      earned_points: parseFloat(earned_points),
+      score,
+    });
+  } catch (err) {
+    console.error('Error overriding answer:', err);
+    res.status(500).json({ msg: 'Failed to override answer' });
+  }
+}
+
 module.exports = {
   createExam,
   addQuestion,
@@ -801,4 +927,6 @@ module.exports = {
   reopenSubmission,
   resetSubmissionForRetest,
   reorderQuestions,
+  getSubmissionDetail,
+  overrideAnswer,
 };

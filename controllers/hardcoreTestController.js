@@ -198,12 +198,21 @@ function gradeAnswer(question, userAnswer) {
       });
     }
 
+    case "paragraph":{
+      // Not auto-graded — admin reviews manually. Return null to signal pending.
+      return null;
+    }
+
     default:
       return false;
   }
 }
 
 function calculateQuestionScore(question, userAnswer) {
+  if (question.question_type === "paragraph") {
+    // Paragraph questions are admin-graded; is_correct stays null, no auto points
+    return { isCorrect: null, scoreRatio: 0 };
+  }
   if (question.question_type !== "composite_question") {
     const isCorrect = gradeAnswer(question, userAnswer);
     return {
@@ -732,10 +741,15 @@ async function submitExam(req, res) {
           question,
           savedAnswer.user_answer,
         );
-        const pointsEarned = Number(
-          (Number(question.points || 0) * Number(scoreRatio || 0)).toFixed(4),
-        );
-        earnedPoints += pointsEarned;
+        // paragraph: is_correct stays null, points_earned stays 0 (admin reviews later)
+        const pointsEarned = isCorrect === null
+          ? 0
+          : Number(
+              (Number(question.points || 0) * Number(scoreRatio || 0)).toFixed(4),
+            );
+        if (isCorrect !== null) {
+          earnedPoints += pointsEarned;
+        }
 
         await pool.query(
           `UPDATE hardcore_test_answer

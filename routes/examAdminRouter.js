@@ -75,5 +75,13 @@ router.put(
   "/submission/:submissionId/reset-reopen",
   adminController.resetSubmissionForRetest,
 );
+router.get(
+  "/submission/:submissionId/detail",
+  adminController.getSubmissionDetail,
+);
+router.put(
+  "/submission/:submissionId/answer/:questionId/override",
+  adminController.overrideAnswer,
+);
 
 module.exports = router;
