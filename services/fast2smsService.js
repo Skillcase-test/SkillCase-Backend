@@ -7,7 +7,7 @@ const API_KEY = process.env.FAST2SMS_API_KEY;
 const ROUTE = "dlt";
 
 const SENDER_ID = "SKLCSE";
-const TEMPLATE_ID = "199663";
+const TEMPLATE_ID = "210004";
 
 function generateOtp() {
   let otp = "";

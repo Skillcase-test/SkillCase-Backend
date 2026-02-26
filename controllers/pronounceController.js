@@ -1,89 +1,170 @@
 const fs = require("fs");
-const sdk = require("microsoft-cognitiveservices-speech-sdk");
+const path = require("path");
+const {
+  TranscribeStreamingClient,
+  StartStreamTranscriptionCommand,
+} = require("@aws-sdk/client-transcribe-streaming");
+const stringSimilarity = require("string-similarity");
+const ffmpegPath = require("ffmpeg-static");
+const ffmpeg = require("fluent-ffmpeg");
+ffmpeg.setFfmpegPath(ffmpegPath);
 const stream = require("stream");
 const csv = require("csv-parser");
 const { pool } = require("../util/db");
 
-const { SUBSCRIPTION_KEY, REGION } = require("../config/configuration");
+const {
+  AWS_ACCESS_KEY_ID,
+  AWS_SECRET_ACCESS_KEY,
+  AWS_REGION,
+} = require("../config/configuration");
 
 async function asses(req, res) {
   if (!req.file) {
     return res.status(400).json({ error: "no file uploaded" });
   }
 
+  const audioPath = req.file.path;
+  const convertedPath = audioPath + ".pcm";
+
   try {
-    const { reference_text } = req.body;
-    const audioPath = req.file.path;
-    const audioBuffer = fs.readFileSync(audioPath);
+    const { reference_text, language = "de-DE" } = req.body;
 
-    const speechConfig = sdk.SpeechConfig.fromSubscription(
-      SUBSCRIPTION_KEY,
-      REGION
-    );
-    speechConfig.speechRecognitionLanguage = "de-DE";
-
+    // Validate input
     if (!reference_text || reference_text.trim().length === 0) {
+      if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
       return res.status(400).json({ error: "reference text required" });
     }
 
-    // Audio and assessment config
-    const audioConfig = sdk.AudioConfig.fromWavFileInput(audioBuffer);
+    // Convert audio to PCM 16kHz Mono using FFmpeg
+    // Note: ffmpeg reads the WAV header for input sample rate automatically.
+    // We force resample to 16000Hz, which is required by AWS Transcribe Streaming.
+    await new Promise((resolve, reject) => {
+      ffmpeg(audioPath)
+        .inputOption("-f wav") // explicitly tell ffmpeg input format
+        .outputOptions(["-f s16le", "-acodec pcm_s16le", "-ac 1", "-ar 16000"])
+        .on("error", (err) => {
+          console.error("FFmpeg conversion error:", err);
+          reject(err);
+        })
+        .on("end", () => {
+          const size = fs.existsSync(convertedPath)
+            ? fs.statSync(convertedPath).size
+            : -1;
+          resolve();
+        })
+        .save(convertedPath);
+    });
 
-    const pronunciationAssessmentConfig = new sdk.PronunciationAssessmentConfig(
-      reference_text,
-      sdk.PronunciationAssessmentGradingSystem.HundredMark,
-      sdk.PronunciationAssessmentGranularity.Phoneme,
-      true
-    );
-
-    // Disable prosody for non-English locales
-    pronunciationAssessmentConfig.enableProsodyAssessment = false;
-
-    // Create recognizer
-    const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
-    pronunciationAssessmentConfig.applyTo(recognizer);
-
-    // Single-shot recognition (preferred for assessment)
-    recognizer.recognizeOnceAsync(
-      (result) => {
-        if (result.reason === sdk.ResultReason.RecognizedSpeech) {
-          const assessment =
-            sdk.PronunciationAssessmentResult.fromResult(result);
-
-          const finalResult = {
-            recognizedText: result.text,
-            accuracyScore: assessment.accuracyScore,
-            fluencyScore: assessment.fluencyScore,
-            completenessScore: assessment.completenessScore,
-            pronunciationScore: assessment.pronunciationScore,
-          };
-
-          fs.unlinkSync(audioPath);
-
-          return res.json({
-            message: "German pronunciation assessment completed successfully.",
-            result: finalResult,
-          });
-        } else if (result.reason === sdk.ResultReason.NoMatch) {
-          fs.unlinkSync(audioPath);
-          return res.status(400).json({
-            error: "No recognizable speech detected in the audio.",
-          });
-        }
+    const transcribeClient = new TranscribeStreamingClient({
+      region: AWS_REGION,
+      credentials: {
+        accessKeyId: AWS_ACCESS_KEY_ID,
+        secretAccessKey: AWS_SECRET_ACCESS_KEY,
       },
-      (err) => {
-        console.error("Recognition failed:", err);
-        fs.unlinkSync(audioPath);
-        return res
-          .status(500)
-          .json({ error: "Recognition failed", details: err });
+    });
+
+    const audioStream = async function* () {
+      const stream = fs.createReadStream(convertedPath);
+      const CHUNK_SIZE = 3200; // Small chunk size for streaming
+      let buffer = Buffer.alloc(0);
+
+      for await (const chunk of stream) {
+        buffer = Buffer.concat([buffer, chunk]);
+        while (buffer.length >= CHUNK_SIZE) {
+          yield { AudioEvent: { AudioChunk: buffer.subarray(0, CHUNK_SIZE) } };
+          buffer = buffer.subarray(CHUNK_SIZE);
+        }
       }
+      if (buffer.length > 0) {
+        yield { AudioEvent: { AudioChunk: buffer } };
+      }
+    };
+
+    const command = new StartStreamTranscriptionCommand({
+      LanguageCode: language,
+      MediaSampleRateHertz: 16000,
+      MediaEncoding: "pcm",
+      AudioStream: audioStream(),
+    });
+
+    const response = await transcribeClient.send(command);
+
+    let recognizedText = "";
+    for await (const event of response.TranscriptResultStream) {
+      if (event.TranscriptEvent) {
+        const results = event.TranscriptEvent.Transcript.Results;
+        if (results.length > 0) {
+          if (!results[0].IsPartial) {
+            recognizedText += results[0].Alternatives[0].Transcript + " ";
+          }
+        }
+      } else if (event.BadRequestException) {
+        console.error(
+          "[Pronounce] AWS BadRequestException:",
+          event.BadRequestException,
+        );
+      } else if (event.InternalFailureException) {
+        console.error(
+          "[Pronounce] AWS InternalFailureException:",
+          event.InternalFailureException,
+        );
+      } else {
+      }
+    }
+
+    recognizedText = recognizedText.trim();
+
+    if (!recognizedText) {
+      // AWS Transcribe returned no speech — treat as 0 score, NOT a 400 error.
+      // This happens when the audio is too quiet, too short, or not in the language.
+      if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+      if (fs.existsSync(convertedPath)) fs.unlinkSync(convertedPath);
+      return res.json({
+        message: "Pronunciation assessment completed successfully.",
+        result: {
+          recognizedText: "",
+          accuracyScore: 0,
+          fluencyScore: 0,
+          completenessScore: 0,
+          pronunciationScore: 0,
+        },
+      });
+    }
+
+    // Calculate accuracy score using string similarity
+    const similarity = stringSimilarity.compareTwoStrings(
+      recognizedText.toLowerCase(),
+      reference_text.toLowerCase(),
     );
+    const accuracyScore = Math.round(similarity * 100);
+
+    const finalResult = {
+      recognizedText: recognizedText,
+      accuracyScore: accuracyScore,
+      fluencyScore: accuracyScore, // AWS Transcribe doesn't provide fluency, mapping to accuracy
+      completenessScore: accuracyScore, // AWS Transcribe doesn't provide completeness, mapping to accuracy
+      pronunciationScore: accuracyScore,
+    };
+
+    if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+    if (fs.existsSync(convertedPath)) fs.unlinkSync(convertedPath);
+
+    return res.json({
+      message: "Pronunciation assessment completed successfully.",
+      result: finalResult,
+    });
   } catch (err) {
-    console.error("Error in German assessment:", err);
-    return res
-      .status(500)
-      .json({ error: "Failed to process German audio", details: err.message });
+    console.error("Error in assessment:", err);
+    if (fs.existsSync(audioPath)) {
+      fs.unlinkSync(audioPath);
+    }
+    if (fs.existsSync(convertedPath)) {
+      fs.unlinkSync(convertedPath);
+    }
+    return res.status(500).json({
+      error: "Failed to process audio",
+      details: err.message,
+    });
   }
 }
 
@@ -126,7 +207,7 @@ async function addPronounceSet(req, res) {
           `INSERT INTO pronounce_card_set (pronounce_name, language, proficiency_level, number_of_cards)
            VALUES ($1, 'German', $2, $3)
            RETURNING pronounce_id`,
-          [pronounce_name, proficiency_level, results.length]
+          [pronounce_name, proficiency_level, results.length],
         );
 
         if (!setInsert.rows || setInsert.rows.length === 0) {
@@ -146,7 +227,7 @@ async function addPronounceSet(req, res) {
         cardRows.forEach((row, i) => {
           const baseIndex = i * 3;
           placeholders.push(
-            `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3})`
+            `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3})`,
           );
           values.push(...row);
         });
@@ -192,7 +273,7 @@ async function deletePronounceSet(req, res) {
   try {
     await pool.query(
       "DELETE FROM pronounce_card_set where pronounce_name = $1 AND proficiency_level= $2 AND language ='German'",
-      [pronounce_name, proficiency_level]
+      [pronounce_name, proficiency_level],
     );
     res.status(200).json({ message: "deleted chapter successfully" });
   } catch (err) {
@@ -211,7 +292,7 @@ async function getPronounceCards(req, res) {
   try {
     const result = await pool.query(
       "SELECT * FROM pronounce_card WHERE pronounce_id = $1",
-      [pronounce_id]
+      [pronounce_id],
     );
 
     res.status(200).json(result.rows);
@@ -237,7 +318,7 @@ async function getPronounceSetByProf(req, res) {
       COALESCE(upp.current_card_index, 0) as current_card_index,
       upp.last_accessed
       FROM pronounce_card_set f LEFT JOIN user_pronounce_progress upp ON f.pronounce_id = upp.pronounce_id AND upp.user_id=$1 WHERE f.proficiency_level = $2 ORDER BY f.pronounce_name`,
-      [user_id, proficiency_level]
+      [user_id, proficiency_level],
     );
 
     res.status(200).json(result.rows);
@@ -284,7 +365,7 @@ async function saveUserChapterState(req, res) {
       ,current_index = EXCLUDED.current_index
       ,useDefault = EXCLUDED.useDefault
       `,
-      [user_id, set_id, status_fixed, order, current_index]
+      [user_id, set_id, status_fixed, order, current_index],
     );
 
     res.status(200).json({ msg: "ok" });
@@ -302,7 +383,7 @@ async function getUserPronounceProgress(req, res) {
     const result = await pool.query(
       `SELECT * FROM user_pronounce_progress WHERE user_id=$1 AND pronounce_id=$2
       `,
-      [user_id, pronounce_id]
+      [user_id, pronounce_id],
     );
 
     if (result.rows.length === 0) {
@@ -334,7 +415,7 @@ async function saveUserPronounceProgress(req, res) {
       completed=EXCLUDED.completed,
       last_accessed=NOW()
       `,
-      [user_id, pronounce_id, current_card_index, completed || false]
+      [user_id, pronounce_id, current_card_index, completed || false],
     );
     res.status(200).json({ msg: "Progress saved successfully!" });
   } catch (error) {
