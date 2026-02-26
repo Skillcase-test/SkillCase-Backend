@@ -911,6 +911,398 @@ async function overrideAnswer(req, res) {
   }
 }
 
+// OVERRIDE ANSWER WITH CUSTOM POINTS (for composite partial credit)
+async function overrideAnswerPoints(req, res) {
+  const { submissionId, questionId } = req.params;
+  const { points_earned } = req.body;
+
+  if (points_earned === undefined || points_earned === null || isNaN(Number(points_earned))) {
+    return res.status(400).json({ msg: 'points_earned is required and must be a number' });
+  }
+
+  try {
+    // Get the question's max points
+    const answerResult = await pool.query(
+      `SELECT q.points
+       FROM hardcore_test_answer a
+       JOIN hardcore_test_question q ON q.question_id = a.question_id
+       WHERE a.submission_id = $1 AND a.question_id = $2`,
+      [submissionId, questionId],
+    );
+
+    if (answerResult.rows.length === 0) {
+      return res.status(404).json({ msg: 'Answer not found' });
+    }
+
+    const maxPoints = parseFloat(answerResult.rows[0].points || 0);
+    const newPointsEarned = Math.min(Math.max(parseFloat(points_earned), 0), maxPoints);
+    const newIsCorrect = newPointsEarned >= maxPoints;
+
+    await pool.query(
+      `UPDATE hardcore_test_answer
+       SET is_correct = $1, points_earned = $2
+       WHERE submission_id = $3 AND question_id = $4`,
+      [newIsCorrect, newPointsEarned, submissionId, questionId],
+    );
+
+    // Recalculate submission score using stored total_points
+    const recalcResult = await pool.query(
+      `SELECT
+         COALESCE(SUM(a.points_earned), 0) AS earned_points,
+         s.total_points
+       FROM hardcore_test_answer a
+       JOIN hardcore_test_submission s ON s.submission_id = a.submission_id
+       WHERE a.submission_id = $1
+       GROUP BY s.total_points`,
+      [submissionId],
+    );
+
+    const earned_points = parseFloat(recalcResult.rows[0]?.earned_points || 0);
+    const total_points = parseFloat(recalcResult.rows[0]?.total_points || 0);
+    const score = total_points > 0
+      ? parseFloat(((earned_points / total_points) * 100).toFixed(2))
+      : 0;
+
+    await pool.query(
+      `UPDATE hardcore_test_submission
+       SET earned_points = $1, score = $2
+       WHERE submission_id = $3`,
+      [earned_points, score, submissionId],
+    );
+
+    res.json({
+      is_correct: newIsCorrect,
+      points_earned: newPointsEarned,
+      earned_points,
+      score,
+    });
+  } catch (err) {
+    console.error('Error overriding answer points:', err);
+    res.status(500).json({ msg: 'Failed to override answer points' });
+  }
+}
+
+// Helper: format a raw DB answer value to a human-readable string for Excel
+function formatAnswerForExcel(userAnswer, questionData, questionType) {
+  if (userAnswer === null || userAnswer === undefined) return "—";
+
+  // Parse if still a JSON string
+  let ans = userAnswer;
+  if (typeof ans === "string") {
+    try { ans = JSON.parse(ans); } catch { /* keep as string */ }
+  }
+
+  const opts = questionData?.options;
+
+  if (questionType === "mcq_single" || questionType === "mcq") {
+    if (typeof ans === "number" && opts?.[ans]) {
+      const opt = opts[ans];
+      return typeof opt === "object" ? "[image]" : String(opt);
+    }
+    return String(ans);
+  }
+
+  if (questionType === "mcq_multi") {
+    const arr = Array.isArray(ans) ? ans : [];
+    return arr.map((i) => {
+      const opt = opts?.[i];
+      return typeof opt === "object" ? "[image]" : String(opt ?? i);
+    }).join(", ") || "—";
+  }
+
+  if (questionType === "true_false" || questionType === "truefalse") {
+    return ans === true || ans === "true" ? "True" : "False";
+  }
+
+  if (questionType === "sentence_ordering" || questionType === "sentence_reorder") {
+    return Array.isArray(ans) ? ans.join(" → ") : String(ans);
+  }
+
+  if (questionType === "matching") {
+    const pairs = Array.isArray(ans) ? ans : [];
+    const left = questionData?.left || [];
+    const right = questionData?.right || [];
+    return pairs.map((p) => `${left[p[0]] ?? p[0]} ↔ ${right[p[1]] ?? p[1]}`).join(", ");
+  }
+
+  if (questionType === "composite_question") {
+    if (typeof ans === "object" && !Array.isArray(ans)) {
+      return Object.keys(ans)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => {
+          const v = ans[k];
+          return `${Number(k) + 1}. ${Array.isArray(v) ? v.join(", ") : String(v ?? "(blank)")}`;
+        })
+        .join(" | ");
+    }
+  }
+
+  if (questionType === "dialogue_dropdown") {
+    if (typeof ans === "object" && !Array.isArray(ans)) {
+      return Object.keys(ans)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => {
+          const dialogue = questionData?.dialogue || [];
+          const line = dialogue[Number(k)];
+          const chosen = line?.options?.[ans[k]] ?? ans[k];
+          return String(chosen);
+        })
+        .join(" / ");
+    }
+  }
+
+  if (Array.isArray(ans)) return ans.join(", ");
+
+  return String(ans);
+}
+
+const ExcelJS = require("exceljs");
+
+// EXPORT SUBMISSIONS AS EXCEL
+async function exportSubmissionsExcel(req, res) {
+  const { testId } = req.params;
+  try {
+    // Exam info
+    const examResult = await pool.query(
+      `SELECT title FROM hardcore_test WHERE test_id = $1`,
+      [testId],
+    );
+    if (examResult.rows.length === 0) {
+      return res.status(404).json({ msg: "Exam not found" });
+    }
+    const examTitle = examResult.rows[0].title;
+
+    // Questions (ordered, skip non-answerable layout types)
+    const questionsResult = await pool.query(
+      `SELECT question_id, question_order, question_type, question_data, points
+       FROM hardcore_test_question
+       WHERE test_id = $1
+         AND question_type NOT IN ('page_break','reading_passage','audio_block','content_block','image_block')
+       ORDER BY question_order ASC`,
+      [testId],
+    );
+    const questions = questionsResult.rows;
+
+    // All completed submissions
+    const subsResult = await pool.query(
+      `SELECT s.submission_id, s.score, s.earned_points, s.total_points,
+              u.fullname, u.username
+       FROM hardcore_test_submission s
+       JOIN app_user u ON u.user_id = s.user_id
+       WHERE s.test_id = $1 AND s.status = 'completed'
+       ORDER BY u.fullname ASC`,
+      [testId],
+    );
+    const submissions = subsResult.rows;
+
+    if (submissions.length === 0) {
+      return res.status(404).json({ msg: "No completed submissions found" });
+    }
+
+    // Answers for all submissions at once
+    const submissionIds = submissions.map((s) => s.submission_id);
+    const answersResult = await pool.query(
+      `SELECT submission_id, question_id, user_answer, is_correct, points_earned
+       FROM hardcore_test_answer
+       WHERE submission_id = ANY($1)`,
+      [submissionIds],
+    );
+
+    // Map: submissionId -> { questionId -> answerRow }
+    const answerMap = {};
+    for (const row of answersResult.rows) {
+      if (!answerMap[row.submission_id]) answerMap[row.submission_id] = {};
+      answerMap[row.submission_id][row.question_id] = row;
+    }
+
+    // ── Build workbook ────────────────────────────────────────────
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "SkillCase Admin";
+    workbook.created = new Date();
+
+    const ws = workbook.addWorksheet("Submissions", {
+      views: [{ state: "frozen", xSplit: 4, ySplit: 1 }],
+    });
+
+    // ── Column definitions ─────────────────────────────────────────
+    const fixedCols = [
+      { header: "#", key: "num", width: 5 },
+      { header: "Question", key: "question", width: 45 },
+      { header: "Type", key: "type", width: 18 },
+      { header: "Correct Answer", key: "correct", width: 30 },
+    ];
+    const studentCols = submissions.map((s) => ({
+      header: `${s.fullname || s.username}\n@${s.username}`,
+      key: `s_${s.submission_id}`,
+      width: 28,
+    }));
+    ws.columns = [...fixedCols, ...studentCols];
+
+    // Style header row
+    const headerRow = ws.getRow(1);
+    headerRow.height = 36;
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002856" } };
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      cell.border = {
+        bottom: { style: "thin", color: { argb: "FF334155" } },
+        right: { style: "thin", color: { argb: "FF334155" } },
+      };
+    });
+
+    // ── Question rows ──────────────────────────────────────────────
+    questions.forEach((q, qIdx) => {
+      const qData = typeof q.question_data === "string"
+        ? JSON.parse(q.question_data)
+        : (q.question_data || {});
+
+      const qText = qData.question || qData.incorrect_sentence || `Question ${qIdx + 1}`;
+
+      // Determine correct answer label
+      let correctLabel = "";
+      if (q.question_type === "paragraph") {
+        correctLabel = "(manual grading)";
+      } else if (q.question_type === "true_false" || q.question_type === "truefalse") {
+        correctLabel = String(qData.correct);
+      } else if (q.question_type === "sentence_ordering" || q.question_type === "sentence_reorder") {
+        correctLabel = (qData.correct_order || []).join(" → ");
+      } else if (q.question_type === "matching") {
+        const left = qData.left || [];
+        const right = qData.right || [];
+        correctLabel = (qData.correct_pairs || []).map((p) => `${left[p[0]]} ↔ ${right[p[1]]}`).join(", ");
+      } else if (q.question_type === "composite_question") {
+        correctLabel = "(see sub-items)";
+      } else if (q.question_type === "mcq_single" || q.question_type === "mcq") {
+        const opts = qData.options;
+        if (typeof qData.correct === "number" && opts) {
+          const opt = opts[qData.correct];
+          correctLabel = typeof opt === "object" ? "[image]" : String(opt ?? qData.correct);
+        } else {
+          correctLabel = String(qData.correct ?? "");
+        }
+      } else if (q.question_type === "mcq_multi") {
+        const opts = qData.options;
+        const correctArr = qData.correct || [];
+        correctLabel = correctArr.map((c) => {
+          if (typeof c === "number" && opts) {
+            const opt = opts[c];
+            return typeof opt === "object" ? "[image]" : String(opt ?? c);
+          }
+          return String(c);
+        }).join(", ");
+      } else {
+        correctLabel = String(qData.correct ?? qData.correct_sentence ?? qData.correct_answer ?? "");
+      }
+
+      const rowData = {
+        num: qIdx + 1,
+        question: qText,
+        type: q.question_type.replace(/_/g, " "),
+        correct: correctLabel,
+      };
+
+      // Each student's answer for this question
+      for (const sub of submissions) {
+        const ansRow = answerMap[sub.submission_id]?.[q.question_id];
+        let rawAns = ansRow?.user_answer ?? null;
+        if (typeof rawAns === "string") {
+          try { rawAns = JSON.parse(rawAns); } catch { /* keep */ }
+        }
+        const formatted = formatAnswerForExcel(rawAns, qData, q.question_type);
+        const isCorrect = ansRow?.is_correct;
+        rowData[`s_${sub.submission_id}`] = formatted;
+      }
+
+      const row = ws.addRow(rowData);
+      row.height = 22;
+
+      // Colour each student answer cell
+      submissions.forEach((sub, sIdx) => {
+        const ansRow = answerMap[sub.submission_id]?.[q.question_id];
+        const isCorrect = ansRow?.is_correct;
+        const cell = row.getCell(fixedCols.length + sIdx + 1);
+        cell.alignment = { wrapText: true, vertical: "top" };
+        if (isCorrect === true) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } }; // green
+        } else if (isCorrect === false) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } }; // red
+        } else if (isCorrect === null && ansRow) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } }; // amber (pending)
+        }
+        if (!ansRow) {
+          cell.font = { italic: true, color: { argb: "FF9CA3AF" } };
+        }
+      });
+
+      // Zebra stripe odd rows
+      if ((qIdx + 1) % 2 === 0) {
+        row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+          if (colNum <= fixedCols.length && !cell.fill?.fgColor) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+          }
+        });
+      }
+    });
+
+    // ── Score summary rows ─────────────────────────────────────────
+    ws.addRow({}); // spacer
+
+    const scoreRow = ws.addRow({
+      num: "",
+      question: "Score (%)",
+      type: "",
+      correct: "",
+      ...Object.fromEntries(
+        submissions.map((s) => [
+          `s_${s.submission_id}`,
+          s.score !== null ? `${parseFloat(s.score).toFixed(1)}%` : "—",
+        ]),
+      ),
+    });
+    scoreRow.height = 22;
+    scoreRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E7FF" } };
+    });
+
+    const ptsRow = ws.addRow({
+      num: "",
+      question: "Points Earned",
+      type: "",
+      correct: "",
+      ...Object.fromEntries(
+        submissions.map((s) => [
+          `s_${s.submission_id}`,
+          `${parseFloat(s.earned_points || 0).toFixed(2)} / ${parseFloat(s.total_points || 0).toFixed(2)}`,
+        ]),
+      ),
+    });
+    ptsRow.height = 22;
+    ptsRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E7FF" } };
+    });
+
+    // ── Send response ──────────────────────────────────────────────
+    const safeTitle = examTitle.replace(/[^a-z0-9_\-]/gi, "_").slice(0, 40);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeTitle}_submissions.xlsx"`,
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error("Error exporting submissions excel:", err);
+    res.status(500).json({ msg: "Failed to export submissions" });
+  }
+}
+
 module.exports = {
   createExam,
   addQuestion,
@@ -929,4 +1321,6 @@ module.exports = {
   reorderQuestions,
   getSubmissionDetail,
   overrideAnswer,
+  overrideAnswerPoints,
+  exportSubmissionsExcel,
 };

@@ -83,5 +83,11 @@ router.put(
   "/submission/:submissionId/answer/:questionId/override",
   adminController.overrideAnswer,
 );
+router.put(
+  "/submission/:submissionId/answer/:questionId/override-points",
+  adminController.overrideAnswerPoints,
+);
+
+router.get("/:testId/export/excel", adminController.exportSubmissionsExcel);
 
 module.exports = router;
