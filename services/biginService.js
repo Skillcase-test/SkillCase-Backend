@@ -135,6 +135,7 @@ async function createContact(userData) {
         Language_Level: language_level || "",
         Educational_Qualification: qualification || "",
         Work_Experience: experience || "",
+        Ad_Set: "App install",
         Tag: [{ name: "App install" }],
         Description: "Registered via Learner App",
       },
@@ -243,6 +244,7 @@ async function insertEventRegistrant({
         Account_Name: "Skillcase",
         Mobile: normalizedPhone,
         Email: email || "",
+        Ad_Set: "Webinar",
         Tag: [{ name: "Inbound Lead" }],
         Description: `Event Registration: ${eventTitle}\nRegistered: ${new Date(
           registrationDate

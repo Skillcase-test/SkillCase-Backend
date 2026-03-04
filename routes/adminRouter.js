@@ -47,6 +47,7 @@ const {
   getNotificationSummary,
   getDailyActiveUsers,
   getAllUsers,
+  updateUserFields,
 } = require("../controllers/analyticsController");
 
 const { getAllAgreements } = require("../controllers/agreementController");
@@ -86,6 +87,7 @@ router.post("/deleteInterview", deleteInterview);
 router.get("/analytics", getUserAnalytics);
 router.get("/analytics/user-count", getTotalUsers);
 router.get("/analytics/all-users", getAllUsers);
+router.patch("/users/:user_id", updateUserFields);
 router.get("/analytics/new-user-analytics", getNewUserAnalytics);
 router.get(
   "/analytics/prev-month-interaction-analytics",

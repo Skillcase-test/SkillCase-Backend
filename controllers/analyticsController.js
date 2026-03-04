@@ -655,6 +655,59 @@ async function getNotificationSummary(req, res) {
   }
 }
 
+async function updateUserFields(req, res) {
+  const { user_id } = req.params;
+  const { current_profeciency_level, is_paid } = req.body;
+
+  const VALID_LEVELS = ["A1", "A2", "B1", "B2"];
+
+  if (
+    current_profeciency_level !== undefined &&
+    !VALID_LEVELS.includes(current_profeciency_level)
+  ) {
+    return res.status(400).json({ error: "Invalid proficiency level" });
+  }
+
+  if (is_paid !== undefined && typeof is_paid !== "boolean") {
+    return res.status(400).json({ error: "is_paid must be a boolean" });
+  }
+
+  if (current_profeciency_level === undefined && is_paid === undefined) {
+    return res.status(400).json({ error: "No fields to update" });
+  }
+
+  try {
+    const setClauses = [];
+    const values = [];
+
+    if (current_profeciency_level !== undefined) {
+      values.push(current_profeciency_level);
+      setClauses.push(`current_profeciency_level = $${values.length}`);
+    }
+
+    if (is_paid !== undefined) {
+      values.push(is_paid);
+      setClauses.push(`is_paid = $${values.length}`);
+    }
+
+    values.push(user_id);
+
+    const result = await pool.query(
+      `UPDATE app_user SET ${setClauses.join(", ")} WHERE user_id = $${values.length} AND role = 'user' RETURNING user_id, current_profeciency_level, is_paid`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json({ success: true, user: result.rows[0] });
+  } catch (error) {
+    console.error("Error updating user fields:", error);
+    res.status(500).json({ error: "Error updating user" });
+  }
+}
+
 module.exports = {
   getUserAnalytics,
   refreshAnalytics,
@@ -664,6 +717,7 @@ module.exports = {
   getNewUserAnalytics,
   getTotalUsers,
   getAllUsers,
+  updateUserFields,
   getStoryAnalytics,
   getPronounceAnalytics,
   getConversationAnalytics,
