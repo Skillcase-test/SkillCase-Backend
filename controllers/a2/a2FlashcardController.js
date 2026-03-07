@@ -238,6 +238,10 @@ async function submitQuiz(req, res) {
 
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+  if (!answers || !Array.isArray(answers) || answers.length === 0) {
+    return res.status(400).json({ error: "No answers provided" });
+  }
+
   try {
     // Calculate score
     let correct = 0;

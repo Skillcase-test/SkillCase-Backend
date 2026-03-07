@@ -19,18 +19,54 @@ const getUserById = async (userId) => {
   return result.rows[0];
 };
 
-const getAllUserTokens = async (targetLevel = "all") => {
+const getAllUserTokens = async (
+  targetLevel = "all",
+  versionFilter = { type: "all" },
+) => {
   let query = "SELECT fcm_token FROM app_user WHERE fcm_token IS NOT NULL";
+
   const params = [];
-  
-  // Filter by proficiency level if specified
+
+  // Filter by proficiency level
   if (targetLevel && targetLevel !== "all") {
-    query += " AND UPPER(current_profeciency_level) = $1";
     params.push(targetLevel.toUpperCase());
+    query += ` AND UPPER(current_profeciency_level) = $${params.length}`;
   }
-  
+
+  // Filter by version
+  if (versionFilter && versionFilter.type === "exact" && versionFilter.exact) {
+    params.push(versionFilter.exact);
+    query += ` AND app_version = $${params.length}`;
+  } else if (versionFilter && versionFilter.type === "range") {
+    if (versionFilter.minVersion) {
+      params.push(versionFilter.minVersion);
+      query += ` AND string_to_array(app_version, '.')::int[] >= string_to_array($${params.length}, '.')::int[]`;
+    }
+    if (versionFilter.maxVersion) {
+      params.push(versionFilter.maxVersion);
+      query += ` AND string_to_array(app_version, '.')::int[] <= string_to_array($${params.length}, '.')::int[]`;
+    }
+  }
+
   const result = await pool.query(query, params);
+
   return result.rows.map((row) => row.fcm_token);
+};
+
+// NEW FUNCTION — Returns all distinct app versions in the DB, sorted newest first
+const getAvailableVersions = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT app_version
+       FROM app_user
+       WHERE app_version IS NOT NULL
+       ORDER BY string_to_array(app_version, '.')::int[] DESC`,
+    );
+    res.json({ versions: result.rows.map((r) => r.app_version) });
+  } catch (err) {
+    console.error("getAvailableVersions error:", err);
+    res.status(500).json({ error: "Failed to fetch versions" });
+  }
 };
 
 const sendNotification = async (req, res) => {
@@ -57,7 +93,15 @@ const sendNotification = async (req, res) => {
 };
 
 const broadcastNotification = async (req, res) => {
-  const { title, body, deepLink, imageUrl, externalLink, targetLevel } = req.body;
+  const {
+    title,
+    body,
+    deepLink,
+    imageUrl,
+    externalLink,
+    targetLevel,
+    versionFilter,
+  } = req.body;
 
   if (!title || !body) {
     return res.status(400).json({ error: "Title and body are required" });
@@ -65,10 +109,27 @@ const broadcastNotification = async (req, res) => {
 
   try {
     // Pass targetLevel to filter users (defaults to "all" if not specified)
-    const tokens = await getAllUserTokens(targetLevel || "all");
+    const tokens = await getAllUserTokens(
+      targetLevel || "all",
+      versionFilter || { type: "all" },
+    );
+
     if (tokens.length === 0) {
-      const levelText = targetLevel && targetLevel !== "all" ? `${targetLevel.toUpperCase()} ` : "";
-      return res.status(400).json({ error: `No ${levelText}users with FCM tokens` });
+      const levelText =
+        targetLevel && targetLevel !== "all"
+          ? `${targetLevel.toUpperCase()} `
+          : "";
+
+      const versionText =
+        versionFilter?.type === "exact"
+          ? ` on v${versionFilter.exact}`
+          : versionFilter?.type === "range"
+            ? ` in version range`
+            : "";
+
+      return res
+        .status(400)
+        .json({ error: `No ${levelText}users${versionText} with FCM tokens` });
     }
     // Build notification payload
     const notification = { title, body };
@@ -114,4 +175,8 @@ const broadcastNotification = async (req, res) => {
   }
 };
 
-module.exports = { sendNotification, broadcastNotification };
+module.exports = {
+  sendNotification,
+  broadcastNotification,
+  getAvailableVersions,
+};

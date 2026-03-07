@@ -7,11 +7,13 @@ const {
 
 // VERSION CONFIGURATION
 // IMPORTANT: When deploying a new OTA update:
-// 1. Move CURRENT_VERSION value to PREVIOUS_VERSION
-// 2. Set CURRENT_VERSION to the new version
-// 3. Deploy the new bundle.zip to /public/updates/
-const CURRENT_VERSION = "1.0.9";
-const PREVIOUS_VERSION = "1.0.7"; // Used for stats tracking — highest version eligible for OTA
+// 1. Set CURRENT_VERSION to the new version
+// 2. Set MIN_OTA_VERSION to the lowest version that can safely receive this OTA bundle
+// 3. Update PREVIOUS_VERSION to the old CURRENT_VERSION (used for stats only)
+// 4. Deploy the new bundle.zip to /public/updates/
+const CURRENT_VERSION = "1.1.0";
+const MIN_OTA_VERSION = "1.0.8"; // Versions ABOVE this (exclusive) get OTA — equal/below go to Play Store
+const PREVIOUS_VERSION = "1.0.9"; // For stats tracking only — not used in update routing
 
 const BUNDLE_URL = `${process.env.BACKEND_URL}/updates/bundle.zip`;
 const PLAY_STORE_URL =
@@ -67,15 +69,13 @@ const checkIfNeedUpdate = async (req, res) => {
     status = UPDATE_STATUS.NEWER_VERSION;
     message = "Development version detected";
   } else if (
-    isVersionGreaterThan(appVersion, "1.0.2") &&
+    isVersionGreaterThan(appVersion, MIN_OTA_VERSION) &&
     isVersionLessThan(appVersion, CURRENT_VERSION)
   ) {
-    // Users on 1.0.3 or 1.0.4 are eligible for OTA update
     status = UPDATE_STATUS.OTA_AVAILABLE;
     url = BUNDLE_URL;
     message = "OTA update available";
   } else {
-    // User is on 1.0.2 or below — too old for OTA, redirect to Play Store
     status = UPDATE_STATUS.PLAY_STORE_UPDATE;
     playStoreUrl = PLAY_STORE_URL;
     message = "Please update from the Play Store for the best experience";
@@ -146,19 +146,20 @@ const getOtaStats = async (req, res) => {
       SELECT 
         (SELECT COUNT(*) FROM app_user WHERE fcm_token IS NOT NULL) as total_app_users,
         (SELECT COUNT(*) FROM app_user WHERE app_version = $1) as on_latest_version,
-        (SELECT COUNT(*) FROM app_user WHERE app_version = $2) as on_previous_version,
-        (SELECT COUNT(*) FROM app_user WHERE app_version IS NOT NULL AND app_version != $1 AND app_version != $2) as on_older_versions,
+        (SELECT COUNT(*) FROM app_user WHERE app_version IS NOT NULL AND string_to_array(app_version, '.')::int[] > string_to_array($2, '.')::int[] AND string_to_array(app_version, '.')::int[] < string_to_array($1, '.')::int[]) as on_ota_eligible,
+        (SELECT COUNT(*) FROM app_user WHERE app_version IS NOT NULL AND string_to_array(app_version, '.')::int[] <= string_to_array($2, '.')::int[]) as on_older_versions,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'download_started' AND created_at > NOW() - INTERVAL '7 days') as downloads_attempted,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'download_complete' AND created_at > NOW() - INTERVAL '7 days') as downloads_succeeded,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'download_failed' AND created_at > NOW() - INTERVAL '7 days') as downloads_failed,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'play_store_redirect' AND created_at > NOW() - INTERVAL '7 days') as play_store_redirects,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'retry_attempt' AND created_at > NOW() - INTERVAL '7 days') as retry_attempts
     `,
-      [CURRENT_VERSION, PREVIOUS_VERSION],
+      [CURRENT_VERSION, MIN_OTA_VERSION],
     );
 
     res.json({
       currentVersion: CURRENT_VERSION,
+      minOtaVersion: MIN_OTA_VERSION,
       previousVersion: PREVIOUS_VERSION,
       ...result.rows[0],
     });

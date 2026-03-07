@@ -115,6 +115,11 @@ async function checkAnswers(req, res) {
     }
 
     const questions = result.rows[0].questions;
+
+    if (!questions || questions.length === 0) {
+      return res.json({ score: 0, correct: 0, total: 0, results: [] });
+    }
+
     let correct = 0;
     const results = [];
 

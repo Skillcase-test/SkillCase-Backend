@@ -1,17 +1,20 @@
 const { pool } = require("../../util/db");
 
-// Parse ##word(meaning)## format to extract vocabulary
-// Note: Using [^#(]+ instead of \w+ to support German chars (ß, ü, ä, ö)
+// Supports: ##word(meaning)## and ##*Article* word(meaning)##
 function parseVocabulary(content) {
-  const regex = /##([^#(]+)\(([^)]+)\)##/g;
+  const regex = /##(?:\*([^*]+)\*\s+)?([^#(]+)\(([^)]+)\)##/g;
   const vocabulary = [];
   let match;
 
   while ((match = regex.exec(content)) !== null) {
-    vocabulary.push({
-      word: match[1].trim(),
-      meaning: match[2].trim(),
-    });
+    const entry = {
+      word: match[2].trim(),
+      meaning: match[3].trim(),
+    };
+    if (match[1]) {
+      entry.article = match[1].trim();
+    }
+    vocabulary.push(entry);
   }
 
   return vocabulary;
@@ -19,7 +22,7 @@ function parseVocabulary(content) {
 
 // Clean content for display (replace markers with just the word)
 function cleanContent(content) {
-  return content.replace(/##([^#(]+)\([^)]+\)##/g, "$1");
+  return content.replace(/##(?:\*[^*]+\*\s+)?([^#(]+)\([^)]+\)##/g, "$1");
 }
 
 // Get all reading chapters with progress
@@ -147,6 +150,11 @@ async function checkAnswers(req, res) {
     }
 
     const questions = result.rows[0].questions;
+
+    if (!questions || questions.length === 0) {
+      return res.json({ score: 0, correct: 0, total: 0, results: [] });
+    }
+
     let correct = 0;
     const results = [];
 
@@ -161,12 +169,19 @@ async function checkAnswers(req, res) {
         // Multi-select: arrays must match
         const correctArr = q.correct || [];
         const userArr = Array.isArray(userAnswer) ? userAnswer : [];
-        isCorrect = correctArr.length === userArr.length && 
-          correctArr.every(c => userArr.includes(c));
+        isCorrect =
+          correctArr.length === userArr.length &&
+          correctArr.every((c) => userArr.includes(c));
       } else if (q.type === "fill_typing" || q.type === "fill_blank_typing") {
         // Text input: case-insensitive, punctuation-stripped comparison
-        const stripPunctuation = (str) => str.replace(/[.,!?;:'"()]/g, '').replace(/\s+/g, ' ').trim();
-        const correctText = stripPunctuation((q.correct || q.correct_answer || "").toLowerCase());
+        const stripPunctuation = (str) =>
+          str
+            .replace(/[.,!?;:'"()]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        const correctText = stripPunctuation(
+          (q.correct || q.correct_answer || "").toLowerCase(),
+        );
         const userText = stripPunctuation((userAnswer || "").toLowerCase());
         isCorrect = userText === correctText;
       } else if (q.type === "fill_options" || q.type === "fill_blank_options") {
@@ -174,21 +189,32 @@ async function checkAnswers(req, res) {
         isCorrect = userAnswer === q.correct;
       } else if (q.type === "sentence_correction") {
         // Correct a sentence: case-insensitive, punctuation-stripped comparison
-        const stripPunctuation = (str) => str.replace(/[.,!?;:'"()]/g, '').replace(/\s+/g, ' ').trim();
-        const correctText = stripPunctuation((q.correct_sentence || q.correct || "").toLowerCase());
+        const stripPunctuation = (str) =>
+          str
+            .replace(/[.,!?;:'"()]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        const correctText = stripPunctuation(
+          (q.correct_sentence || q.correct || "").toLowerCase(),
+        );
         const userText = stripPunctuation((userAnswer || "").toLowerCase());
         isCorrect = userText === correctText;
-      } else if (q.type === "sentence_ordering" || q.type === "sentence_reorder") {
+      } else if (
+        q.type === "sentence_ordering" ||
+        q.type === "sentence_reorder"
+      ) {
         // Order words: compare arrays or joined strings
         const correctOrder = q.correct_order || [];
         if (Array.isArray(userAnswer)) {
           isCorrect = userAnswer.join(" ") === correctOrder.join(" ");
         } else {
-          isCorrect = (userAnswer || "").toLowerCase().trim() === correctOrder.join(" ").toLowerCase().trim();
+          isCorrect =
+            (userAnswer || "").toLowerCase().trim() ===
+            correctOrder.join(" ").toLowerCase().trim();
         }
       } else {
         // MCQ single - compare option index or text
-        if (typeof userAnswer === 'number' && q.options) {
+        if (typeof userAnswer === "number" && q.options) {
           isCorrect = q.options[userAnswer] === q.correct;
         } else {
           isCorrect = userAnswer === q.correct;

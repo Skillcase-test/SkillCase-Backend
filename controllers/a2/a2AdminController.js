@@ -100,22 +100,39 @@ const templates = {
   },
 
   reading: {
-    chapter_name: "Reading Chapter",
-    type: "email",
-    title: "Email Subject",
-    content:
-      "Liebe Anna,\n\nich lade dich zu meiner ##Geburtstagsparty(birthday party)## ein...\n\nMit freundlichen Grüßen,\nMax",
-    questions: [
+    topic_name: "Reading Topic",
+    contents: [
       {
-        type: "true_false",
-        question: "Max is inviting Anna to a party.",
-        correct: true,
+        type: "email",
+        title: "Email Subject",
+        content:
+          "Liebe Anna,\n\nich lade dich zu meiner ##*Die* Geburtstagsparty(birthday party)## ein...\n\nMit freundlichen Grüßen,\nMax",
+        questions: [
+          {
+            type: "true_false",
+            question: "Max is inviting Anna to a party.",
+            correct: true,
+          },
+          {
+            type: "mcq_single",
+            question: "What kind of party is it?",
+            options: ["Birthday party", "Wedding", "Graduation"],
+            correct: "Birthday party",
+          },
+        ],
       },
       {
-        type: "mcq_single",
-        question: "What kind of party is it?",
-        options: ["Birthday party", "Wedding", "Graduation"],
-        correct: "Birthday party",
+        type: "sms",
+        title: "SMS Title",
+        content:
+          "Hallo! Kommst du heute? ##*Das* Treffen(meeting)## ist um 18 Uhr.",
+        questions: [
+          {
+            type: "true_false",
+            question: "The meeting is at 6pm.",
+            correct: true,
+          },
+        ],
       },
     ],
   },
@@ -223,9 +240,9 @@ async function deleteChapter(req, res) {
     if (module === "listening") {
       const audioResult = await pool.query(
         `SELECT audio_url FROM a2_listening_content WHERE chapter_id = $1`,
-        [chapterId]
+        [chapterId],
       );
-      
+
       for (const row of audioResult.rows) {
         if (row.audio_url && row.audio_url.includes("cloudinary")) {
           try {
@@ -233,15 +250,20 @@ async function deleteChapter(req, res) {
             const urlParts = row.audio_url.split("/");
             const filename = urlParts[urlParts.length - 1];
             const publicId = `a2-listening/${filename.split(".")[0]}`;
-            await cloudinary.uploader.destroy(publicId, { resource_type: "video" });
+            await cloudinary.uploader.destroy(publicId, {
+              resource_type: "video",
+            });
           } catch (cloudErr) {
             console.error("Error deleting from Cloudinary:", cloudErr);
           }
         }
       }
-      
+
       // Delete listening content
-      await pool.query(`DELETE FROM a2_listening_content WHERE chapter_id = $1`, [chapterId]);
+      await pool.query(
+        `DELETE FROM a2_listening_content WHERE chapter_id = $1`,
+        [chapterId],
+      );
     }
 
     // Delete related data based on module
@@ -249,29 +271,43 @@ async function deleteChapter(req, res) {
       // Delete flashcards first, then sets
       await pool.query(
         `DELETE FROM a2_flashcard WHERE set_id IN (SELECT set_id FROM a2_flashcard_set WHERE chapter_id = $1)`,
-        [chapterId]
+        [chapterId],
       );
-      await pool.query(`DELETE FROM a2_flashcard_set WHERE chapter_id = $1`, [chapterId]);
+      await pool.query(`DELETE FROM a2_flashcard_set WHERE chapter_id = $1`, [
+        chapterId,
+      ]);
     } else if (module === "grammar") {
       await pool.query(
         `DELETE FROM a2_grammar_question WHERE topic_id IN (SELECT id FROM a2_grammar_topic WHERE chapter_id = $1)`,
-        [chapterId]
+        [chapterId],
       );
-      await pool.query(`DELETE FROM a2_grammar_topic WHERE chapter_id = $1`, [chapterId]);
+      await pool.query(`DELETE FROM a2_grammar_topic WHERE chapter_id = $1`, [
+        chapterId,
+      ]);
     } else if (module === "speaking") {
-      await pool.query(`DELETE FROM a2_speaking_content WHERE chapter_id = $1`, [chapterId]);
+      await pool.query(
+        `DELETE FROM a2_speaking_content WHERE chapter_id = $1`,
+        [chapterId],
+      );
     } else if (module === "reading") {
-      await pool.query(`DELETE FROM a2_reading_content WHERE chapter_id = $1`, [chapterId]);
+      await pool.query(`DELETE FROM a2_reading_content WHERE chapter_id = $1`, [
+        chapterId,
+      ]);
     } else if (module === "test") {
       await pool.query(
         `DELETE FROM a2_test_set WHERE topic_id IN (SELECT id FROM a2_test_topic WHERE chapter_id = $1)`,
-        [chapterId]
+        [chapterId],
       );
-      await pool.query(`DELETE FROM a2_test_topic WHERE chapter_id = $1`, [chapterId]);
+      await pool.query(`DELETE FROM a2_test_topic WHERE chapter_id = $1`, [
+        chapterId,
+      ]);
     }
 
     // Finally delete the chapter itself
-    await pool.query(`DELETE FROM a2_chapter WHERE id = $1 AND module = $2`, [chapterId, module]);
+    await pool.query(`DELETE FROM a2_chapter WHERE id = $1 AND module = $2`, [
+      chapterId,
+      module,
+    ]);
 
     res.json({ success: true, message: "Chapter deleted permanently" });
   } catch (err) {
@@ -487,14 +523,35 @@ async function uploadSpeaking(req, res) {
   }
 }
 
-// Upload Reading (with optional image)
+// Helper: parse ##*Article* word(meaning)## syntax (also supports ##word(meaning)##)
+function parseVocabFromContent(content) {
+  const vocabRegex = /##(?:\*([^*]+)\*\s+)?([^#(]+)\(([^)]+)\)##/g;
+  const vocabulary = [];
+  let match;
+  while ((match = vocabRegex.exec(content)) !== null) {
+    const entry = { word: match[2].trim(), meaning: match[3].trim() };
+    if (match[1]) entry.article = match[1].trim();
+    vocabulary.push(entry);
+  }
+  return vocabulary;
+}
+
 async function uploadReading(req, res) {
   try {
     const jsonData = JSON.parse(req.files.file[0].buffer.toString());
-    const { chapter_name, type, title, content, questions } = jsonData;
 
-    // Upload image to Cloudinary if provided (for story type)
-    let heroImageUrl = jsonData.hero_image_url;
+    // Support both old flat format and new nested format
+    const isNested = Array.isArray(jsonData.contents);
+    const topicName = jsonData.topic_name || jsonData.chapter_name;
+
+    if (!topicName) {
+      return res.status(400).json({ error: "topic_name is required" });
+    }
+
+    // Upload image to Cloudinary if provided
+    // Flat format: attaches to the single content item
+    // Nested format: automatically attaches to the first story-type content item
+    let uploadedImageUrl = null;
     if (req.files.image && req.files.image[0]) {
       const imageResult = await new Promise((resolve, reject) => {
         cloudinary.uploader
@@ -504,47 +561,75 @@ async function uploadReading(req, res) {
           })
           .end(req.files.image[0].buffer);
       });
-      heroImageUrl = imageResult.secure_url;
+      uploadedImageUrl = imageResult.secure_url;
     }
 
-    // Parse vocabulary from content
-    const vocabulary = [];
-    const vocabRegex = /##(\w+)\(([^)]+)\)##/g;
-    let match;
-    while ((match = vocabRegex.exec(content)) !== null) {
-      vocabulary.push({ word: match[1], meaning: match[2] });
+    // For nested format, inject uploaded image into the first story item that lacks one
+    if (isNested && uploadedImageUrl) {
+      const storyItem = jsonData.contents.find(
+        (c) => c.type === "story" && !c.hero_image_url,
+      );
+      if (storyItem) {
+        storyItem.hero_image_url = uploadedImageUrl;
+      }
     }
 
-    // Create chapter
+    // Create chapter (topic)
     const chapterResult = await pool.query(
       `
       INSERT INTO a2_chapter (module, chapter_name, order_index)
       VALUES ('reading', $1, (SELECT COALESCE(MAX(order_index), -1) + 1 FROM a2_chapter WHERE module = 'reading'))
       RETURNING id
     `,
-      [chapter_name],
+      [topicName],
     );
 
     const chapterId = chapterResult.rows[0].id;
 
-    // Create reading content
-    await pool.query(
-      `
-      INSERT INTO a2_reading_content (chapter_id, title, content_type, content, hero_image_url, vocabulary, questions, order_index)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 0)
-    `,
-      [
-        chapterId,
-        title || chapter_name,
-        type,
-        content,
-        heroImageUrl || null,
-        JSON.stringify(vocabulary),
-        JSON.stringify(questions),
-      ],
-    );
+    // Build list of content items to insert
+    const contentItems = isNested
+      ? jsonData.contents
+      : [
+          {
+            type: jsonData.type,
+            title: jsonData.title || topicName,
+            content: jsonData.content,
+            questions: jsonData.questions,
+            hero_image_url: uploadedImageUrl ?? jsonData.hero_image_url ?? null,
+          },
+        ];
 
-    res.json({ success: true, chapterId, vocabularyFound: vocabulary.length });
+    let totalVocab = 0;
+
+    for (let i = 0; i < contentItems.length; i++) {
+      const item = contentItems[i];
+      const vocabulary = parseVocabFromContent(item.content || "");
+      totalVocab += vocabulary.length;
+
+      await pool.query(
+        `
+        INSERT INTO a2_reading_content (chapter_id, title, content_type, content, hero_image_url, vocabulary, questions, order_index)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `,
+        [
+          chapterId,
+          item.title || topicName,
+          item.type || "article",
+          item.content || "",
+          item.hero_image_url || null,
+          JSON.stringify(vocabulary),
+          JSON.stringify(item.questions || []),
+          i,
+        ],
+      );
+    }
+
+    res.json({
+      success: true,
+      chapterId,
+      contentItemsInserted: contentItems.length,
+      vocabularyFound: totalVocab,
+    });
   } catch (err) {
     console.error("Error uploading reading:", err);
     res.status(500).json({ error: "Failed to upload reading: " + err.message });
