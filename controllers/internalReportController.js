@@ -1,15 +1,16 @@
 const { pool } = require("../util/db");
 
-function getTodayIST() {
+function getYesterdayIST() {
   const now = new Date();
   const istOffset = 5.5 * 60 * 60 * 1000;
   const istTime = new Date(now.getTime() + istOffset);
+  istTime.setDate(istTime.getDate() - 1);
   return istTime.toISOString().split("T")[0];
 }
 
 async function getDailyReport(req, res) {
   try {
-    const today = getTodayIST();
+    const today = getYesterdayIST();
 
     const [
       streakMaintainers,
@@ -34,16 +35,57 @@ async function getDailyReport(req, res) {
         [today],
       ),
 
-      // DAU today — users with any activity recorded today
+      // DAU yesterday — same query your dashboard uses
       pool.query(
-        `SELECT
-            u.fullname,
-            u.username,
-            u.last_activity_at
-          FROM app_user u
-          WHERE DATE(u.last_activity_at AT TIME ZONE 'Asia/Kolkata') = $1
-            AND u.role = 'user'
-          ORDER BY u.last_activity_at DESC`,
+        `WITH all_activities AS (
+    SELECT user_id, modified_at AS activity_time 
+      FROM user_chapter_submissions WHERE test_status = true 
+      AND DATE(modified_at AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id, last_accessed 
+      FROM user_pronounce_progress WHERE completed = true 
+      AND DATE(last_accessed AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id, last_accessed 
+      FROM user_conversation_progress WHERE completed = true 
+      AND DATE(last_accessed AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id, completed_at 
+      FROM user_story_progress WHERE completed = true 
+      AND DATE(completed_at AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id::text, last_reviewed 
+      FROM a2_flashcard_progress WHERE is_completed = true 
+      AND DATE(last_reviewed AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id::text, last_practiced 
+      FROM a2_grammar_progress WHERE is_completed = true 
+      AND DATE(last_practiced AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id::text, last_practiced 
+      FROM a2_listening_progress WHERE is_completed = true 
+      AND DATE(last_practiced AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id::text, last_practiced 
+      FROM a2_speaking_progress WHERE is_completed = true 
+      AND DATE(last_practiced AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id::text, last_practiced 
+      FROM a2_reading_progress WHERE is_completed = true 
+      AND DATE(last_practiced AT TIME ZONE 'Asia/Kolkata') = $1::date
+    UNION ALL
+    SELECT user_id::text, last_attempted 
+      FROM a2_test_progress WHERE is_fully_completed = true 
+      AND DATE(last_attempted AT TIME ZONE 'Asia/Kolkata') = $1::date
+  )
+  SELECT DISTINCT
+    u.fullname,
+    u.username,
+    u.current_profeciency_level
+  FROM all_activities a
+  JOIN app_user u ON a.user_id = u.user_id
+  WHERE u.role = 'user'
+  ORDER BY u.fullname`,
         [today],
       ),
 
@@ -54,7 +96,7 @@ async function getDailyReport(req, res) {
             username,
             phone,
             signup_source,
-            (created_at AT TIME ZONE 'Asia/Kolkata') AS created_at_ist
+            TO_CHAR(created_at AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM') AS install_time_ist
           FROM app_user
           WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = $1
             AND role = 'user'
@@ -64,12 +106,13 @@ async function getDailyReport(req, res) {
 
       // Session stats — active in last 24h and last 1h
       pool.query(
-        `SELECT
-            COUNT(*) FILTER (WHERE last_activity_at > NOW() - INTERVAL '24 hours') AS active_last_24h,
-            COUNT(*) FILTER (WHERE last_activity_at > NOW() - INTERVAL '1 hour')   AS active_last_1h,
-            COUNT(*)                                                                 AS total_users
-          FROM app_user
-          WHERE role = 'user'`,
+        `SELECT COUNT(*) FILTER (
+    WHERE DATE(last_activity_at AT TIME ZONE 'Asia/Kolkata') = $1
+  ) AS active_yesterday,
+  COUNT(*) AS total_users
+  FROM app_user
+  WHERE role = 'user'`,
+        [today],
       ),
 
       // Unique event registrations today
