@@ -47,6 +47,9 @@ const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
 const { initEventReminderJob } = require("./jobs/eventReminderJob");
 
+const { initStreakResetJob } = require("./jobs/streakResetJob");
+const internalRouter = require("./routes/internalRouter");
+
 const {
   authMiddleware,
   authorizeRole,
@@ -89,6 +92,7 @@ initStreakNotificationJobs();
 // initMessageSchedulerJob();
 startOtpCleanupJob();
 initEventReminderJob();
+initStreakResetJob();
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -165,6 +169,8 @@ app.use(
 
 app.use("/api/events", eventRouter);
 app.use("/api/leads", leadRouter);
+
+app.use("/api/internal", internalRouter);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");
