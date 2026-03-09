@@ -1130,20 +1130,20 @@ async function exportSubmissionsExcel(req, res) {
     );
     const questions = questionsResult.rows;
 
-    // All completed submissions
+    // All finished submissions (completed, auto_closed, warned_out)
     const subsResult = await pool.query(
       `SELECT s.submission_id, s.score, s.earned_points, s.total_points,
               u.fullname, u.username
        FROM hardcore_test_submission s
        JOIN app_user u ON u.user_id = s.user_id
-       WHERE s.test_id = $1 AND s.status = 'completed'
+       WHERE s.test_id = $1 AND s.status != 'in_progress'
        ORDER BY u.fullname ASC`,
       [testId],
     );
     const submissions = subsResult.rows;
 
     if (submissions.length === 0) {
-      return res.status(404).json({ msg: "No completed submissions found" });
+      return res.status(404).json({ msg: "No finished submissions found" });
     }
 
     // Answers for all submissions at once
