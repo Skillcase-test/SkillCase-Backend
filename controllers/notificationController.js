@@ -57,9 +57,10 @@ const getAllUserTokens = async (
 const getAvailableVersions = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT DISTINCT app_version
+      `SELECT app_version
        FROM app_user
        WHERE app_version IS NOT NULL
+       GROUP BY app_version
        ORDER BY string_to_array(app_version, '.')::int[] DESC`,
     );
     res.json({ versions: result.rows.map((r) => r.app_version) });

@@ -675,6 +675,53 @@ async function removeVisibility(req, res) {
 async function getSubmissions(req, res) {
   const { testId } = req.params;
   try {
+    // 1. Auto-close and grade any expired in_progress submissions
+    const examResult = await pool.query(
+      `SELECT duration_minutes, available_until FROM hardcore_test WHERE test_id = $1`,
+      [testId]
+    );
+
+    if (examResult.rows.length > 0) {
+      const exam = examResult.rows[0];
+      const activeSubs = await pool.query(
+        `SELECT submission_id, started_at FROM hardcore_test_submission 
+         WHERE test_id = $1 AND status = 'in_progress'`,
+        [testId]
+      );
+
+      if (activeSubs.rows.length > 0) {
+        const { gradeSubmission } = require("./hardcoreTestController");
+        const now = new Date();
+        const availableUntil = exam.available_until ? new Date(exam.available_until) : null;
+
+        for (const sub of activeSubs.rows) {
+          let isExpired = false;
+
+          // Check against hard deadline
+          if (availableUntil && now > availableUntil) {
+            isExpired = true;
+          } 
+          // Check against duration (allow 1 minute grace period)
+          else if (exam.duration_minutes) {
+            const startTime = new Date(sub.started_at);
+            const elapsedMs = now.getTime() - startTime.getTime();
+            if (elapsedMs > (exam.duration_minutes + 1) * 60 * 1000) {
+              isExpired = true;
+            }
+          }
+
+          if (isExpired) {
+            try {
+              await gradeSubmission(testId, sub.submission_id, "auto_closed");
+            } catch (gradeErr) {
+              console.error(`Error auto-grading submission ${sub.submission_id}:`, gradeErr);
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Fetch all submissions to return
     const result = await pool.query(
       `SELECT s.*, u.username, u.fullname
        FROM hardcore_test_submission s

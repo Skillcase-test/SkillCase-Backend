@@ -687,6 +687,80 @@ async function recordWarning(req, res) {
   }
 }
 
+// HELPER: Grade and update a submission
+async function gradeSubmission(testId, submissionId, status = "completed") {
+  // Get all questions
+  const questionsResult = await pool.query(
+    `SELECT * FROM hardcore_test_question WHERE test_id = $1 ORDER BY question_order ASC`,
+    [testId],
+  );
+
+  // Get all saved answers
+  const answersResult = await pool.query(
+    `SELECT * FROM hardcore_test_answer WHERE submission_id = $1`,
+    [submissionId],
+  );
+
+  const answerMap = {};
+  answersResult.rows.forEach((a) => {
+    answerMap[a.question_id] = a;
+  });
+
+  // Grade each question
+  let totalPoints = 0;
+  let earnedPoints = 0;
+
+  for (const question of questionsResult.rows) {
+    if (NON_ANSWERABLE_TYPES.has(question.question_type)) {
+      continue;
+    }
+
+    totalPoints += parseFloat(question.points || 0);
+    const savedAnswer = answerMap[question.question_id];
+
+    if (savedAnswer) {
+      const { isCorrect, scoreRatio } = calculateQuestionScore(
+        question,
+        savedAnswer.user_answer,
+      );
+      // paragraph: is_correct stays null, points_earned stays 0 (admin reviews later)
+      const pointsEarned =
+        isCorrect === null
+          ? 0
+          : Number(
+              (Number(question.points || 0) * Number(scoreRatio || 0)).toFixed(4),
+            );
+      if (isCorrect !== null) {
+        earnedPoints += pointsEarned;
+      }
+
+      await pool.query(
+        `UPDATE hardcore_test_answer
+         SET is_correct = $1, points_earned = $2
+         WHERE answer_id = $3`,
+        [isCorrect, pointsEarned, savedAnswer.answer_id],
+      );
+    }
+  }
+
+  const score = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
+
+  // Update submission
+  await pool.query(
+    `UPDATE hardcore_test_submission
+     SET status = $1, finished_at = COALESCE(finished_at, NOW()),
+         score = $2, total_points = $3, earned_points = $4
+     WHERE submission_id = $5`,
+    [status, score.toFixed(2), totalPoints, earnedPoints, submissionId],
+  );
+
+  return {
+    score: parseFloat(score.toFixed(2)),
+    earned_points: earnedPoints,
+    total_points: totalPoints,
+  };
+}
+
 // FINAL SUBMIT
 async function submitExam(req, res) {
   const { testId } = req.params;
@@ -707,75 +781,13 @@ async function submitExam(req, res) {
       return res.status(400).json({ msg: "Exam already submitted" });
     }
 
-    // Get all questions
-    const questionsResult = await pool.query(
-      `SELECT * FROM hardcore_test_question WHERE test_id = $1 ORDER BY question_order ASC`,
-      [testId],
-    );
-
-    // Get all saved answers
-    const answersResult = await pool.query(
-      `SELECT * FROM hardcore_test_answer WHERE submission_id = $1`,
-      [sub.submission_id],
-    );
-    const answerMap = {};
-    answersResult.rows.forEach((a) => {
-      answerMap[a.question_id] = a;
-    });
-
-    // Grade each question (skip non-question types)
-    let totalPoints = 0;
-    let earnedPoints = 0;
-
-    for (const question of questionsResult.rows) {
-      // Skip non-question types
-      if (NON_ANSWERABLE_TYPES.has(question.question_type)) {
-        continue;
-      }
-
-      totalPoints += question.points;
-      const savedAnswer = answerMap[question.question_id];
-
-      if (savedAnswer) {
-        const { isCorrect, scoreRatio } = calculateQuestionScore(
-          question,
-          savedAnswer.user_answer,
-        );
-        // paragraph: is_correct stays null, points_earned stays 0 (admin reviews later)
-        const pointsEarned = isCorrect === null
-          ? 0
-          : Number(
-              (Number(question.points || 0) * Number(scoreRatio || 0)).toFixed(4),
-            );
-        if (isCorrect !== null) {
-          earnedPoints += pointsEarned;
-        }
-
-        await pool.query(
-          `UPDATE hardcore_test_answer
-           SET is_correct = $1, points_earned = $2
-           WHERE answer_id = $3`,
-          [isCorrect, pointsEarned, savedAnswer.answer_id],
-        );
-      }
-    }
-
-    const score = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
-
-    // Update submission
-    await pool.query(
-      `UPDATE hardcore_test_submission
-       SET status = 'completed', finished_at = NOW(),
-           score = $1, total_points = $2, earned_points = $3
-       WHERE submission_id = $4`,
-      [score.toFixed(2), totalPoints, earnedPoints, sub.submission_id],
-    );
+    const result = await gradeSubmission(testId, sub.submission_id, "completed");
 
     res.json({
       msg: "Exam submitted successfully",
-      score: parseFloat(score.toFixed(2)),
-      earned_points: earnedPoints,
-      total_points: totalPoints,
+      score: result.score,
+      earned_points: result.earned_points,
+      total_points: result.total_points,
     });
   } catch (err) {
     console.error("Error submitting exam:", err);
@@ -855,5 +867,6 @@ module.exports = {
   saveAnswer,
   recordWarning,
   submitExam,
+  gradeSubmission, // EXPORTED FOR ADMIN CONTROLLER
   getResult,
 };
