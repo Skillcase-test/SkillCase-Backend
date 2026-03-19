@@ -42,12 +42,20 @@ const examAdminRouter = require("./routes/examAdminRouter");
 const batchRouter = require("./routes/batchRouter");
 const examAudioRouter = require("./routes/examAudioRouter");
 
+// Dynamic Landing Page components
+const landingPageRouter = require("./routes/landingPageRouter");
+
+// News Module
+const newsRouter = require("./routes/newsRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
 const { initEventReminderJob } = require("./jobs/eventReminderJob");
-
 const { initStreakResetJob } = require("./jobs/streakResetJob");
+const { initNewsIngestJob } = require("./jobs/newsIngestJob");
+const { initNewsNotificationJob } = require("./jobs/newsNotificationJob");
+
 const internalRouter = require("./routes/internalRouter");
 
 const {
@@ -93,6 +101,8 @@ initStreakNotificationJobs();
 startOtpCleanupJob();
 initEventReminderJob();
 initStreakResetJob();
+initNewsIngestJob();
+initNewsNotificationJob();
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -169,6 +179,16 @@ app.use(
 
 app.use("/api/events", eventRouter);
 app.use("/api/leads", leadRouter);
+
+// Dynamic Landing page
+// Public
+app.use("/api/landing-page", landingPageRouter);
+
+// Admin
+app.use("/api/admin/landing-page", landingPageRouter);
+
+// News Module
+app.use("/api/news", authMiddleware, newsRouter);
 
 app.use("/api/internal", internalRouter);
 

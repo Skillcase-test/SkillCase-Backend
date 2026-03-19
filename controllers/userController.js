@@ -448,6 +448,39 @@ async function updateProfile(req, res) {
   }
 }
 
+// GET News Hint Status
+async function getNewsHintStatus(req, res) {
+  const { user_id } = req.user;
+  try {
+    const result = await pool.query(
+      "SELECT news_hint_seen FROM app_user WHERE user_id = $1",
+      [user_id],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+    res.status(200).json({ seen: result.rows[0].news_hint_seen || false });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Error fetching news hint status" });
+  }
+}
+
+// POST Mark News Hint As Seen
+async function markNewsHintSeen(req, res) {
+  const { user_id } = req.user;
+  try {
+    await pool.query(
+      "UPDATE app_user SET news_hint_seen = TRUE WHERE user_id = $1",
+      [user_id],
+    );
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Error updating news hint status" });
+  }
+}
+
 module.exports = {
   login,
   signup,
@@ -461,4 +494,6 @@ module.exports = {
   completeA2Onboarding,
   getProfile,
   updateProfile,
+  getNewsHintStatus,
+  markNewsHintSeen,
 };

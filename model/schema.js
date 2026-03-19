@@ -457,7 +457,8 @@ ALTER TABLE app_user
   ADD COLUMN IF NOT EXISTS article_education_complete BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS app_version VARCHAR(20),
   ADD COLUMN IF NOT EXISTS signup_source VARCHAR(10) DEFAULT 'web',
-  ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;
+  ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS news_hint_seen BOOLEAN DEFAULT FALSE;
 
   UPDATE app_user SET phone = number WHERE phone IS NULL AND number IS NOT NULL;
   UPDATE app_user SET fullname = username WHERE fullname IS NULL;
@@ -903,6 +904,90 @@ ALTER TABLE hardcore_test
   ALTER COLUMN available_until TYPE TIMESTAMPTZ USING available_until AT TIME ZONE 'UTC';
 `;
 
+//Dynamic Landing Page Components
+const createLpDemoClass = `
+CREATE TABLE IF NOT EXISTS lp_demo_class (
+  level VARCHAR(10) PRIMARY KEY,
+  heading VARCHAR(300) NOT NULL DEFAULT 'Free Demo Class for Nurses: Learn German Basics',
+  subtitle TEXT NOT NULL DEFAULT 'Learn to greet and introduce yourself in German - in just 30 minutes!',
+  check_item_1 VARCHAR(100) NOT NULL DEFAULT 'Today',
+  check_item_2 VARCHAR(100) NOT NULL DEFAULT '9:00 PM',
+  button_text VARCHAR(100) NOT NULL DEFAULT 'Register Now for Free',
+  button_link TEXT NOT NULL DEFAULT 'https://luma.com/Skillcase.in',
+  badge_text VARCHAR(200) NOT NULL DEFAULT 'Limited Seats available',
+  image_url TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+const createLpSalaryInfo = `
+CREATE TABLE IF NOT EXISTS lp_salary_info (
+  level VARCHAR(10) PRIMARY KEY,
+  heading VARCHAR(300) NOT NULL DEFAULT 'Salary, Expenses and Savings in Germany',
+  subtitle VARCHAR(300) NOT NULL DEFAULT 'Get real answers in 30 minutes:',
+  benefit_1 VARCHAR(300) NOT NULL DEFAULT 'Exact salary in for Nurses in Germany',
+  benefit_2 VARCHAR(300) NOT NULL DEFAULT 'Cost of living in various Cities',
+  benefit_3 VARCHAR(300) NOT NULL DEFAULT 'Monthly expected savings',
+  benefit_4 VARCHAR(300) NOT NULL DEFAULT 'Benefits: PR, Free Education & more',
+  button_text VARCHAR(100) NOT NULL DEFAULT 'Register Now for Free',
+  button_link TEXT NOT NULL DEFAULT 'https://luma.com/e4hfm8xk',
+  image_url TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+const createLpTalkToTeam = `
+CREATE TABLE IF NOT EXISTS lp_talk_to_team (
+  level VARCHAR(10) PRIMARY KEY,
+  heading VARCHAR(300) NOT NULL DEFAULT 'Talk to our team',
+  feature_1 VARCHAR(300) NOT NULL DEFAULT 'Personalized assistance',
+  feature_2 VARCHAR(300) NOT NULL DEFAULT 'Step-by-step guidance',
+  feature_3 VARCHAR(300) NOT NULL DEFAULT 'Clearing all your doubts with ease',
+  button_text VARCHAR(100) NOT NULL DEFAULT 'Call us Now',
+  phone_link VARCHAR(100) NOT NULL DEFAULT 'tel:9731462667',
+  phone_display_text VARCHAR(100) NOT NULL DEFAULT 'Call Us @ 9731462667',
+  badge_text VARCHAR(100) NOT NULL DEFAULT 'Online',
+  avatar_image_url TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+const seedLandingPageDefaults = `
+INSERT INTO lp_demo_class (level) VALUES ('A1') ON CONFLICT (level) DO NOTHING;
+INSERT INTO lp_demo_class (level) VALUES ('A2') ON CONFLICT (level) DO NOTHING;
+INSERT INTO lp_salary_info (level) VALUES ('A1') ON CONFLICT (level) DO NOTHING;
+INSERT INTO lp_salary_info (level) VALUES ('A2') ON CONFLICT (level) DO NOTHING;
+INSERT INTO lp_talk_to_team (level) VALUES ('A1') ON CONFLICT (level) DO NOTHING;
+INSERT INTO lp_talk_to_team (level) VALUES ('A2') ON CONFLICT (level) DO NOTHING;
+`;
+
+const createNewsTables = `
+CREATE TABLE IF NOT EXISTS news_article (
+  id SERIAL PRIMARY KEY,
+  news_key VARCHAR(500) NOT NULL UNIQUE,
+  source_name VARCHAR(255) DEFAULT '',
+  article_url TEXT DEFAULT '',
+  image_url TEXT DEFAULT '',
+  published_at TIMESTAMPTZ,
+  english_title TEXT NOT NULL,
+  english_summary TEXT DEFAULT '',
+  english_content TEXT DEFAULT '',
+  german_title TEXT DEFAULT '',
+  german_summary TEXT DEFAULT '',
+  german_content TEXT DEFAULT '',
+  target_levels TEXT[] NOT NULL DEFAULT ARRAY['ALL','A1','A2'],
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  translated_at TIMESTAMPTZ,
+  raw_payload_json JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_news_article_published ON news_article(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_article_levels ON news_article USING GIN(target_levels);
+CREATE INDEX IF NOT EXISTS idx_news_article_active ON news_article(is_active);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -941,4 +1026,9 @@ module.exports = {
   createEventOverride,
   createA2Tables,
   createHardcoreTestTables,
+  createLpDemoClass,
+  createLpSalaryInfo,
+  createLpTalkToTeam,
+  seedLandingPageDefaults,
+  createNewsTables,
 };

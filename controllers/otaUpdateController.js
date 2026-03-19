@@ -11,9 +11,9 @@ const {
 // 2. Set MIN_OTA_VERSION to the lowest version that can safely receive this OTA bundle
 // 3. Update PREVIOUS_VERSION to the old CURRENT_VERSION (used for stats only)
 // 4. Deploy the new bundle.zip to /public/updates/
-const CURRENT_VERSION = "1.1.1";
+const CURRENT_VERSION = "1.1.2";
 const MIN_OTA_VERSION = "1.0.8"; // Versions ABOVE this (exclusive) get OTA — equal/below go to Play Store
-const PREVIOUS_VERSION = "1.1.0"; // For stats tracking only — not used in update routing
+const PREVIOUS_VERSION = "1.1.1"; // For stats tracking only — not used in update routing
 
 const BUNDLE_URL = `${process.env.BACKEND_URL}/updates/bundle.zip`;
 const PLAY_STORE_URL =

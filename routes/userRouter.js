@@ -39,6 +39,10 @@ router.post(
   userController.completeArticleEducation,
 );
 
+// News Hint Routes
+router.get("/news-hint", authMiddleware, userController.getNewsHintStatus);
+router.post("/news-hint/seen", authMiddleware, userController.markNewsHintSeen);
+
 // Profile Routes
 router.get("/profile", authMiddleware, userController.getProfile);
 router.put("/profile", authMiddleware, userController.updateProfile);

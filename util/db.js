@@ -64,6 +64,11 @@ async function initDb(pool) {
     await pool.query(queries.alterTable);
     await pool.query(queries.createEventOverride);
     await pool.query(queries.createA2Tables);
+    await pool.query(queries.createLpDemoClass);
+    await pool.query(queries.createLpSalaryInfo);
+    await pool.query(queries.createLpTalkToTeam);
+    await pool.query(queries.seedLandingPageDefaults);
+    await pool.query(queries.createNewsTables);
 
     //Test
     await pool.query(queries.createHardcoreTestTables);
