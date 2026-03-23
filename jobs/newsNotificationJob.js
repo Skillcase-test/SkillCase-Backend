@@ -85,7 +85,7 @@ async function sendNewsNotification() {
       },
     },
     data: {
-      deepLink: "skillcase://news",
+      deepLink: "/news",
       notificationType: "daily_news",
       sentAt: sentTimestamp,
     },
