@@ -48,6 +48,9 @@ const landingPageRouter = require("./routes/landingPageRouter");
 // News Module
 const newsRouter = require("./routes/newsRouter");
 
+// Sync
+const syncRouter = require("./routes/syncRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
@@ -191,6 +194,9 @@ app.use("/api/admin/landing-page", landingPageRouter);
 app.use("/api/news", authMiddleware, newsRouter);
 
 app.use("/api/internal", internalRouter);
+
+// Sync
+app.use("/api/sync", syncRouter);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");

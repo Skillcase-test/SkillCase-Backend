@@ -18,7 +18,7 @@ async function checkOtpRateLimit(phone) {
     `SELECT COUNT(*) as count FROM user_otp 
      WHERE phone = $1 
      AND created_at > NOW() - INTERVAL '${OTP_RATE_WINDOW_MINUTES} minutes'`,
-    [phone]
+    [phone],
   );
   return parseInt(result.rows[0].count) >= OTP_RATE_LIMIT;
 }
@@ -91,7 +91,7 @@ async function sendSignupOtp(req, res) {
     // Check if user already exists
     const existingUser = await pool.query(
       "SELECT * FROM app_user WHERE phone = $1 AND status = 1",
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     if (existingUser.rows.length > 0) {
@@ -104,7 +104,7 @@ async function sendSignupOtp(req, res) {
     // Check for pending user
     const pendingUser = await pool.query(
       "SELECT * FROM app_user WHERE phone = $1 AND status = 0",
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     let userId;
@@ -114,7 +114,7 @@ async function sendSignupOtp(req, res) {
       userId = pendingUser.rows[0].user_id;
       await pool.query(
         `UPDATE app_user SET countrycode = $1, modified_at = NOW() WHERE user_id = $2`,
-        [countrycode || "+91", userId]
+        [countrycode || "+91", userId],
       );
     } else {
       // Create new pending user
@@ -124,7 +124,7 @@ async function sendSignupOtp(req, res) {
           (user_id, username, phone, number, countrycode, role, status, 
            current_profeciency_level, password)
         VALUES ($1, $2, $3, $3, $4, 'user', 0, 'A1', '')`,
-        [userId, normalizedPhone, normalizedPhone, countrycode || "+91"]
+        [userId, normalizedPhone, normalizedPhone, countrycode || "+91"],
       );
     }
 
@@ -139,7 +139,7 @@ async function sendSignupOtp(req, res) {
     // Insert new OTP
     await pool.query(
       "INSERT INTO user_otp (user_id, phone, otp, status) VALUES ($1, $2, $3, 0)",
-      [userId, normalizedPhone, otp]
+      [userId, normalizedPhone, otp],
     );
 
     // Send OTP via Fast2SMS
@@ -178,7 +178,7 @@ async function verifySignupOtp(req, res) {
       `SELECT *, EXTRACT(EPOCH FROM (NOW() - created_at)) as age_seconds 
        FROM user_otp WHERE phone = $1 AND status = 0 
        ORDER BY created_at DESC LIMIT 1`,
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     if (otpResult.rows.length === 0) {
@@ -207,7 +207,7 @@ async function verifySignupOtp(req, res) {
     // Mark OTP as verified
     await pool.query(
       "UPDATE user_otp SET status = 1, updated_at = NOW() WHERE id = $1",
-      [otpRecord.id]
+      [otpRecord.id],
     );
 
     // OTP verified, user can proceed to personal details
@@ -248,7 +248,7 @@ async function completeSignup(req, res) {
     // Check if user exists
     const userResult = await pool.query(
       "SELECT * FROM app_user WHERE phone = $1",
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     if (userResult.rows.length === 0) {
@@ -263,7 +263,7 @@ async function completeSignup(req, res) {
     // Check if email is already used
     const emailCheck = await pool.query(
       "SELECT * FROM app_user WHERE email = $1 AND user_id != $2",
-      [email, user.user_id]
+      [email, user.user_id],
     );
 
     if (emailCheck.rows.length > 0) {
@@ -292,8 +292,52 @@ async function completeSignup(req, res) {
         proficiencyLevel,
         user.user_id,
         signup_source || "web",
-      ]
+      ],
     );
+
+    // Sync new user to PHP main website (fire-and-forget)
+    if (process.env.SYNC_PARTNER_URL && process.env.SYNC_API_KEY) {
+      const payload = {
+        phone: normalizedPhone,
+        fullname,
+        email,
+        qualification,
+        language_level,
+        experience,
+        learner_user_id: user.user_id,
+      };
+
+      fetch(`${process.env.SYNC_PARTNER_URL}/api/sync/user/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Sync-Api-Key": process.env.SYNC_API_KEY,
+        },
+        body: JSON.stringify(payload),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+              const errText = await r.text();
+              throw new Error("HTTP " + r.status + " " + errText);
+          }
+          return r.json();
+        })
+        .then((data) => {
+          if (data.candidate_id) {
+            pool
+              .query(
+                "UPDATE app_user SET main_site_id = $1 WHERE user_id = $2",
+                [data.candidate_id, user.user_id],
+              )
+              .catch((e) =>
+                console.error("Sync main_site_id save failed:", e.message),
+              );
+          }
+        })
+        .catch((err) => {
+          console.error("Sync to PHP on signup failed:", err.message);
+        });
+    }
 
     insertOrGetContact({
       fullname,
@@ -307,7 +351,7 @@ async function completeSignup(req, res) {
         console.log("Bigin CRM Result:", result.status);
         console.log("Zoho ID:", result.zohoId);
         console.log("User:", fullname, "|", normalizedPhone);
-        
+
         if (result.zohoId) {
           pool.query("UPDATE app_user SET zohoid = $1 WHERE user_id = $2", [
             result.zohoId,
@@ -330,7 +374,7 @@ async function completeSignup(req, res) {
         onboarding_completed: false,
       },
       config.JWT_SECRET_KEY,
-      { expiresIn: "60d" }
+      { expiresIn: "60d" },
     );
 
     res.json({
@@ -374,7 +418,7 @@ async function sendLoginOtp(req, res) {
 
     const userResult = await pool.query(
       "SELECT * FROM app_user WHERE phone = $1 AND status = 1",
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     if (userResult.rows.length === 0) {
@@ -392,13 +436,13 @@ async function sendLoginOtp(req, res) {
     // Delete any existing OTPs for this phone
     const deleteResult = await pool.query(
       "DELETE FROM user_otp WHERE phone = $1",
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     // Insert new OTP
     await pool.query(
       "INSERT INTO user_otp (user_id, phone, otp, status) VALUES ($1, $2, $3, 0)",
-      [user.user_id, normalizedPhone, otp]
+      [user.user_id, normalizedPhone, otp],
     );
 
     // Send OTP
@@ -436,7 +480,7 @@ async function verifyLoginOtp(req, res) {
       `SELECT *, EXTRACT(EPOCH FROM (NOW() - created_at)) as age_seconds 
        FROM user_otp WHERE phone = $1 AND status = 0 
        ORDER BY created_at DESC LIMIT 1`,
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     if (otpResult.rows.length === 0) {
@@ -469,12 +513,12 @@ async function verifyLoginOtp(req, res) {
 
     await pool.query(
       "UPDATE user_otp SET status = 1, updated_at = NOW() WHERE id = $1",
-      [otpRecord.id]
+      [otpRecord.id],
     );
 
     const userResult = await pool.query(
       "SELECT * FROM app_user WHERE user_id = $1",
-      [otpRecord.user_id]
+      [otpRecord.user_id],
     );
 
     const user = userResult.rows[0];
@@ -488,7 +532,7 @@ async function verifyLoginOtp(req, res) {
         onboarding_completed: user.onboarding_completed,
       },
       config.JWT_SECRET_KEY,
-      { expiresIn: "60d" }
+      { expiresIn: "60d" },
     );
 
     res.json({
@@ -533,7 +577,7 @@ async function resendOtp(req, res) {
 
     const userResult = await pool.query(
       "SELECT * FROM app_user WHERE phone = $1",
-      [normalizedPhone]
+      [normalizedPhone],
     );
 
     if (userResult.rows.length === 0) {
@@ -552,7 +596,7 @@ async function resendOtp(req, res) {
 
     await pool.query(
       "INSERT INTO user_otp (user_id, phone, otp, status) VALUES ($1, $2, $3, 0)",
-      [user.user_id, normalizedPhone, otp]
+      [user.user_id, normalizedPhone, otp],
     );
 
     const smsResult = await sendOtp(normalizedPhone, otp);

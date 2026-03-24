@@ -45,8 +45,37 @@ function getDailyTemplate() {
   return NOTIFICATION_TEMPLATES[dayIndex];
 }
 
+// Wrapper to prevent transient AWS RDS/EC2 connection drops from crashing the cron job
+async function executeWithRetry(queryText, params = [], retries = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await pool.query(queryText, params);
+    } catch (err) {
+      lastError = err;
+      console.warn(
+        `[NewsNotification] DB query failed (attempt ${attempt}/${retries}): ${err.message}`
+      );
+      if (attempt < retries) {
+        // Wait 2s, 4s before retrying
+        await new Promise((res) => setTimeout(res, attempt * 2000));
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function wasNewsIngestedToday() {
+  // fetched_at is stored in UTC. 8 AM IST = 2:30 AM UTC, 9 AM IST = 3:30 AM UTC
+  // Both are on the same UTC date, so this comparison is safe.
+  const result = await executeWithRetry(
+    `SELECT 1 FROM news_article WHERE fetched_at::date = CURRENT_DATE LIMIT 1`
+  );
+  return result.rowCount > 0;
+}
+
 async function getEligibleUserTokens() {
-  const result = await pool.query(
+  const result = await executeWithRetry(
     `
     SELECT fcm_token
     FROM app_user
@@ -61,43 +90,50 @@ async function getEligibleUserTokens() {
 }
 
 async function sendNewsNotification() {
-  const tokens = await getEligibleUserTokens();
-
-  if (tokens.length === 0) {
-    console.log("[NewsNotification] No eligible users found. Skipping.");
-    return;
-  }
-
-  const template = getDailyTemplate();
-  const sentTimestamp = new Date().toISOString();
-
-  const message = {
-    tokens,
-    notification: {
-      title: template.title,
-      body: template.body,
-    },
-    android: {
-      priority: "high",
-      notification: {
-        channelId: "skillcase_default",
-        sound: "skillcase_notification",
-      },
-    },
-    data: {
-      deepLink: "/news",
-      notificationType: "daily_news",
-      sentAt: sentTimestamp,
-    },
-  };
-
   try {
+    // Guard: only notify if news was actually fetched today
+    const ingestedToday = await wasNewsIngestedToday();
+    if (!ingestedToday) {
+      console.log("[NewsNotification] No news ingested today. Skipping notification.");
+      return;
+    }
+
+    const tokens = await getEligibleUserTokens();
+
+    if (tokens.length === 0) {
+      console.log("[NewsNotification] No eligible users found. Skipping.");
+      return;
+    }
+
+    const template = getDailyTemplate();
+    const sentTimestamp = new Date().toISOString();
+
+    const message = {
+      tokens,
+      notification: {
+        title: template.title,
+        body: template.body,
+      },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "skillcase_default",
+          sound: "skillcase_notification",
+        },
+      },
+      data: {
+        deepLink: "/news",
+        notificationType: "daily_news",
+        sentAt: sentTimestamp,
+      },
+    };
+
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(
-      `[NewsNotification] Sent "${template.title}" to ${response.successCount}/${tokens.length} devices`,
+      `[NewsNotification] Sent "${template.title}" to ${response.successCount}/${tokens.length} devices`
     );
 
-    const userResult = await pool.query(
+    const userResult = await executeWithRetry(
       `SELECT user_id FROM app_user WHERE fcm_token = ANY($1)`,
       [tokens],
     );
@@ -112,7 +148,7 @@ async function sendNewsNotification() {
         "daily_news",
         sentTimestamp,
       ]);
-      await pool.query(
+      await executeWithRetry(
         `INSERT INTO notification_analytics (user_id, notification_type, sent_at) VALUES ${values}`,
         params,
       );

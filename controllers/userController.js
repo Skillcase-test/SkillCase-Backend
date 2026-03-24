@@ -402,7 +402,7 @@ async function updateProfile(req, res) {
            qualification = $5, language_level = $6, experience = $7,
            status = $8, modified_at = CURRENT_TIMESTAMP
        WHERE user_id = $9
-       RETURNING user_id, username, fullname, email, number, countrycode,
+       RETURNING user_id, username, fullname, email, phone, number, countrycode,
                  dob::text, gender, qualification, language_level, experience,
                  profile_pic_url, status`,
       [
@@ -423,6 +423,38 @@ async function updateProfile(req, res) {
     }
 
     const user = result.rows[0];
+
+    // Sync profile update to PHP main website (fire-and-forget, non-blocking)
+    if (process.env.SYNC_PARTNER_URL && process.env.SYNC_API_KEY) {
+      const payload = {
+        phone: user.phone || user.number,
+        fullname: user.fullname,
+        email: user.email,
+        dob: user.dob,
+        gender: user.gender,
+        qualification: user.qualification,
+        language_level: user.language_level,
+        experience: user.experience,
+      };
+
+      fetch(`${process.env.SYNC_PARTNER_URL}/api/sync/user/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Sync-Api-Key": process.env.SYNC_API_KEY,
+        },
+        body: JSON.stringify(payload),
+      })
+        .then(async (resp) => {
+          if (!resp.ok) {
+            const errText = await resp.text();
+            console.error("PHP profile sync returned error:", resp.status, errText);
+          }
+        })
+        .catch((err) => {
+          console.error("Sync profile update to PHP failed:", err.message);
+        });
+    }
 
     res.status(200).json({
       msg: "Profile updated successfully",
