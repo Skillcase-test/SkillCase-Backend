@@ -18,6 +18,10 @@ const { uploadEventImage } = require("../controllers/uploadController");
 
 // Access code verification middleware
 const verifyAccessCode = (req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return next();
+  }
+
   const accessCode = req.headers["x-access-code"];
   const VALID_CODE = process.env.EVENT_ADMIN_ACCESS_CODE;
 
