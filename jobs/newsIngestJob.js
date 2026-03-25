@@ -23,6 +23,7 @@ const {
   NEWS_SUMMARY_INFERENCE_PROFILE_ID,
   NEWS_SUMMARY_REGION,
   NEWS_SUMMARY_MAX_TOKENS,
+  NEWS_RUN_ON_STARTUP,
   NEWS_IMAGE_ENABLED,
   NEWS_IMAGE_MODEL_ID,
   NEWS_IMAGE_REGION,
@@ -869,10 +870,7 @@ function initNewsIngestJob() {
     { timezone: "Asia/Kolkata" },
   );
 
-  const runOnStartup =
-    String(process.env.NEWS_RUN_ON_STARTUP || "false").toLowerCase() === "true";
-
-  if (runOnStartup && process.env.NODE_ENV !== "production") {
+  if (NEWS_RUN_ON_STARTUP && process.env.NODE_ENV !== "production") {
     ingestNews();
   }
 

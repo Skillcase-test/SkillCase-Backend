@@ -27,6 +27,8 @@ const NEWS_SUMMARY_MAX_TOKENS = Number(
   process.env.NEWS_SUMMARY_MAX_TOKENS || 350,
 );
 
+const NEWS_RUN_ON_STARTUP =
+  String(process.env.NEWS_RUN_ON_STARTUP || "false").toLowerCase() === "true";
 const NEWS_IMAGE_ENABLED =
   String(process.env.NEWS_IMAGE_ENABLED || "true").toLowerCase() === "true";
 const NEWS_IMAGE_MODEL_ID =
@@ -62,6 +64,7 @@ module.exports = {
   NEWS_SUMMARY_INFERENCE_PROFILE_ID,
   NEWS_SUMMARY_REGION,
   NEWS_SUMMARY_MAX_TOKENS,
+  NEWS_RUN_ON_STARTUP,
   NEWS_IMAGE_ENABLED,
   NEWS_IMAGE_MODEL_ID,
   NEWS_IMAGE_REGION,
