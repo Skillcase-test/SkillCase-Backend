@@ -989,6 +989,92 @@ CREATE INDEX IF NOT EXISTS idx_news_article_levels ON news_article USING GIN(tar
 CREATE INDEX IF NOT EXISTS idx_news_article_active ON news_article(is_active);
 `;
 
+const createInterviewToolTables = `
+CREATE TABLE IF NOT EXISTS interview_position (
+  position_id SERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  role_title VARCHAR(255) NOT NULL,
+  department VARCHAR(255) DEFAULT '',
+  location VARCHAR(255) DEFAULT '',
+  employment_type VARCHAR(100) DEFAULT '',
+  short_description TEXT DEFAULT '',
+  intro_video_key TEXT,
+  intro_video_title VARCHAR(255) DEFAULT '',
+  intro_video_description TEXT DEFAULT '',
+  farewell_video_key TEXT,
+  farewell_video_title VARCHAR(255) DEFAULT '',
+  farewell_video_description TEXT DEFAULT '',
+  thank_you_message TEXT DEFAULT '',
+  thinking_time_seconds INTEGER DEFAULT 3,
+  answer_time_seconds INTEGER,
+  allowed_retakes INTEGER DEFAULT 0,
+  slug VARCHAR(50) NOT NULL UNIQUE,
+  status VARCHAR(30) NOT NULL DEFAULT 'draft' CHECK (
+    status IN ('draft', 'published_open', 'published_closed')
+  ),
+  preview_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by VARCHAR(50) REFERENCES app_user(user_id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS interview_position_question (
+  question_id SERIAL PRIMARY KEY,
+  position_id INTEGER NOT NULL REFERENCES interview_position(position_id) ON DELETE CASCADE,
+  question_order INTEGER NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  short_description TEXT DEFAULT '',
+  video_key TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(position_id, question_order)
+);
+
+CREATE INDEX IF NOT EXISTS idx_interview_position_status ON interview_position(status);
+CREATE INDEX IF NOT EXISTS idx_interview_question_position ON interview_position_question(position_id, question_order);
+
+CREATE TABLE IF NOT EXISTS interview_submission (
+  submission_id SERIAL PRIMARY KEY,
+  position_id INTEGER NOT NULL REFERENCES interview_position(position_id) ON DELETE CASCADE,
+  candidate_name VARCHAR(255) NOT NULL,
+  candidate_email VARCHAR(255) NOT NULL,
+  candidate_phone VARCHAR(50) NOT NULL,
+  session_token VARCHAR(100) NOT NULL UNIQUE,
+  status VARCHAR(30) NOT NULL DEFAULT 'started' CHECK (
+    status IN ('started', 'completed', 'abandoned')
+  ),
+  current_question_index INTEGER NOT NULL DEFAULT 0,
+  last_saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP,
+  overall_review_status VARCHAR(30) DEFAULT 'completed' CHECK (
+    overall_review_status IN ('completed', 'in_review', 'shortlisted', 'rejected')
+  ),
+  calculated_score NUMERIC(5,2),
+  overall_score NUMERIC(5,2),
+  total_questions INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_interview_submission_position ON interview_submission(position_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_interview_submission_email ON interview_submission(position_id, LOWER(candidate_email));
+CREATE INDEX IF NOT EXISTS idx_interview_submission_phone ON interview_submission(position_id, candidate_phone);
+
+CREATE TABLE IF NOT EXISTS interview_submission_answer (
+  answer_id SERIAL PRIMARY KEY,
+  submission_id INTEGER NOT NULL REFERENCES interview_submission(submission_id) ON DELETE CASCADE,
+  question_id INTEGER NOT NULL REFERENCES interview_position_question(question_id) ON DELETE CASCADE,
+  answer_order INTEGER NOT NULL,
+  answer_video_key TEXT NOT NULL,
+  answer_duration_seconds NUMERIC(10,2),
+  retake_count INTEGER NOT NULL DEFAULT 0,
+  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  admin_score INTEGER CHECK (admin_score BETWEEN 1 AND 5),
+  UNIQUE(submission_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_interview_answer_submission ON interview_submission_answer(submission_id, answer_order);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -1032,4 +1118,5 @@ module.exports = {
   createLpTalkToTeam,
   seedLandingPageDefaults,
   createNewsTables,
+  createInterviewToolTables,
 };

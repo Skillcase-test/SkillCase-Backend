@@ -51,6 +51,10 @@ const newsRouter = require("./routes/newsRouter");
 // Sync
 const syncRouter = require("./routes/syncRouter");
 
+// Interview
+const interviewToolAdminRouter = require("./routes/interviewToolAdminRouter");
+const interviewToolPublicRouter = require("./routes/interviewToolPublicRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
@@ -91,7 +95,12 @@ app.use(
   cors({
     origin: allowed_origins,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-access-code", "x-internal-api-key"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-access-code",
+      "x-internal-api-key",
+    ],
     credentials: true,
   }),
 );
@@ -198,6 +207,16 @@ app.use("/api/internal", internalRouter);
 
 // Sync
 app.use("/api/sync", syncRouter);
+
+// Interview
+app.use(
+  "/api/admin/interview-tools",
+  authMiddleware,
+  authorizeRole("admin"),
+  interviewToolAdminRouter,
+);
+
+app.use("/api/interview-tools", interviewToolPublicRouter);
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");

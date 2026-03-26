@@ -73,6 +73,9 @@ async function initDb(pool) {
     //Test
     await pool.query(queries.createHardcoreTestTables);
 
+    // Interview
+    await pool.query(queries.createInterviewToolTables);
+
     console.log("Tables created or already exist!");
   } catch (err) {
     console.error(`Error occurred while creating tables: ${err}`);
