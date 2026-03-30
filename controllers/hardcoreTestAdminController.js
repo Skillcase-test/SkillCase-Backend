@@ -1183,7 +1183,7 @@ async function exportSubmissionsExcel(req, res) {
     // All finished submissions (completed, auto_closed, warned_out)
     const subsResult = await pool.query(
       `SELECT s.submission_id, s.score, s.earned_points, s.total_points,
-              u.fullname, u.username
+              u.fullname, u.username, u.number
        FROM hardcore_test_submission s
        JOIN app_user u ON u.user_id = s.user_id
        WHERE s.test_id = $1 AND s.status != 'in_progress'
@@ -1229,7 +1229,11 @@ async function exportSubmissionsExcel(req, res) {
       { header: "Correct Answer", key: "correct", width: 30 },
     ];
     const studentCols = submissions.map((s) => ({
-      header: `${s.fullname || s.username}\n@${s.username}`,
+      header: [
+        s.fullname || s.username,
+        `@${s.username}`,
+        s.number ? String(s.number) : "",
+      ].filter(Boolean).join("\n"),
       key: `s_${s.submission_id}`,
       width: 28,
     }));
