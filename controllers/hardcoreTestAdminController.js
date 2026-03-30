@@ -1040,15 +1040,18 @@ function formatAnswerForExcel(userAnswer, questionData, questionType) {
   }
 
   const opts = questionData?.options;
+  const subLabels = "abcdefghijklmnopqrstuvwxyz";
 
+  // MCQ single — answer is an index into options
   if (questionType === "mcq_single" || questionType === "mcq") {
-    if (typeof ans === "number" && opts?.[ans]) {
+    if (typeof ans === "number" && opts?.[ans] !== undefined) {
       const opt = opts[ans];
       return typeof opt === "object" ? "[image]" : String(opt);
     }
     return String(ans);
   }
 
+  // MCQ multi — answer is an array of indices
   if (questionType === "mcq_multi") {
     const arr = Array.isArray(ans) ? ans : [];
     return arr.map((i) => {
@@ -1057,14 +1060,36 @@ function formatAnswerForExcel(userAnswer, questionData, questionType) {
     }).join(", ") || "—";
   }
 
+  // True / False
   if (questionType === "true_false" || questionType === "truefalse") {
     return ans === true || ans === "true" ? "True" : "False";
   }
 
+  // Fill blank (options) — answer is an index into options
+  if (questionType === "fill_options" || questionType === "fill_blank_options") {
+    if (typeof ans === "number" && opts?.[ans] !== undefined) {
+      const opt = opts[ans];
+      return typeof opt === "object" ? "[image]" : String(opt);
+    }
+    return String(ans);
+  }
+
+  // Fill blank (typing) — answer is already plain text
+  if (questionType === "fill_typing" || questionType === "fill_blank_typing") {
+    return String(ans ?? "—");
+  }
+
+  // Sentence ordering
   if (questionType === "sentence_ordering" || questionType === "sentence_reorder") {
     return Array.isArray(ans) ? ans.join(" → ") : String(ans);
   }
 
+  // Sentence correction — answer is plain text
+  if (questionType === "sentence_correction") {
+    return String(ans ?? "—");
+  }
+
+  // Matching
   if (questionType === "matching") {
     const pairs = Array.isArray(ans) ? ans : [];
     const left = questionData?.left || [];
@@ -1072,27 +1097,52 @@ function formatAnswerForExcel(userAnswer, questionData, questionType) {
     return pairs.map((p) => `${left[p[0]] ?? p[0]} ↔ ${right[p[1]] ?? p[1]}`).join(", ");
   }
 
+  // Composite question — sub-items use (a)/(b)/... labels
+  // Sub-item values may be indices (for dropdown/option types) or plain text (for blanks)
   if (questionType === "composite_question") {
     if (typeof ans === "object" && !Array.isArray(ans)) {
+      const items = Array.isArray(questionData?.items) ? questionData.items : [];
       return Object.keys(ans)
         .sort((a, b) => Number(a) - Number(b))
         .map((k) => {
+          const idx = Number(k);
           const v = ans[k];
-          return `${Number(k) + 1}. ${Array.isArray(v) ? v.join(", ") : String(v ?? "(blank)")}`;
+          const item = items[idx];
+          const label = subLabels[idx] ?? String(idx + 1);
+
+          // Dropdown / option sub-items store an index — resolve to text
+          if (item?.type === "dropdown" || item?.type === "option") {
+            const itemOpts = Array.isArray(item.options) ? item.options : [];
+            if (typeof v === "number" && itemOpts[v] !== undefined) {
+              return `(${label}). ${String(itemOpts[v])}`;
+            }
+            return `(${label}). ${String(v ?? "(blank)")}`;
+          }
+
+          // Blank sub-items — value is already text or array of texts
+          const display = Array.isArray(v) ? v.join(", ") : String(v ?? "(blank)");
+          return `(${label}). ${display}`;
         })
         .join(" | ");
     }
   }
 
+  // Dialogue dropdown — answer is { lineIndex: chosenOptionIndex }
   if (questionType === "dialogue_dropdown") {
     if (typeof ans === "object" && !Array.isArray(ans)) {
+      const dialogue = questionData?.dialogue || [];
       return Object.keys(ans)
         .sort((a, b) => Number(a) - Number(b))
         .map((k) => {
-          const dialogue = questionData?.dialogue || [];
           const line = dialogue[Number(k)];
-          const chosen = line?.options?.[ans[k]] ?? ans[k];
-          return String(chosen);
+          const rawVal = ans[k];
+          if (line?.options && typeof rawVal === "number" && line.options[rawVal] !== undefined) {
+            return String(line.options[rawVal]);
+          }
+          if (line?.options && typeof rawVal === "number") {
+            return `(option ${rawVal + 1})`;
+          }
+          return String(rawVal ?? "—");
         })
         .join(" / ");
     }
@@ -1204,9 +1254,19 @@ async function exportSubmissionsExcel(req, res) {
         ? JSON.parse(q.question_data)
         : (q.question_data || {});
 
-      const qText = qData.question || qData.incorrect_sentence || `Question ${qIdx + 1}`;
+      const qText = (
+        qData.question?.trim() ||
+        qData.title?.trim() ||
+        qData.text?.trim() ||
+        qData.instructions?.trim() ||
+        qData.passage?.trim() ||
+        qData.reading_passage?.trim() ||
+        qData.incorrect_sentence?.trim() ||
+        `Question ${qIdx + 1}`
+      );
 
       // Determine correct answer label
+      const subLabels = "abcdefghijklmnopqrstuvwxyz";
       let correctLabel = "";
       if (q.question_type === "paragraph") {
         correctLabel = "(manual grading)";
@@ -1214,17 +1274,17 @@ async function exportSubmissionsExcel(req, res) {
         correctLabel = String(qData.correct);
       } else if (q.question_type === "sentence_ordering" || q.question_type === "sentence_reorder") {
         correctLabel = (qData.correct_order || []).join(" → ");
+      } else if (q.question_type === "sentence_correction") {
+        correctLabel = String(qData.correct_sentence || qData.correct || "");
       } else if (q.question_type === "matching") {
         const left = qData.left || [];
         const right = qData.right || [];
         correctLabel = (qData.correct_pairs || []).map((p) => `${left[p[0]]} ↔ ${right[p[1]]}`).join(", ");
-      } else if (q.question_type === "composite_question") {
-        correctLabel = "(see sub-items)";
       } else if (q.question_type === "mcq_single" || q.question_type === "mcq") {
         const opts = qData.options;
-        if (typeof qData.correct === "number" && opts) {
+        if (typeof qData.correct === "number" && opts?.[qData.correct] !== undefined) {
           const opt = opts[qData.correct];
-          correctLabel = typeof opt === "object" ? "[image]" : String(opt ?? qData.correct);
+          correctLabel = typeof opt === "object" ? "[image]" : String(opt);
         } else {
           correctLabel = String(qData.correct ?? "");
         }
@@ -1232,16 +1292,163 @@ async function exportSubmissionsExcel(req, res) {
         const opts = qData.options;
         const correctArr = qData.correct || [];
         correctLabel = correctArr.map((c) => {
-          if (typeof c === "number" && opts) {
+          if (typeof c === "number" && opts?.[c] !== undefined) {
             const opt = opts[c];
-            return typeof opt === "object" ? "[image]" : String(opt ?? c);
+            return typeof opt === "object" ? "[image]" : String(opt);
           }
           return String(c);
         }).join(", ");
+      } else if (q.question_type === "fill_options" || q.question_type === "fill_blank_options") {
+        const opts = qData.options;
+        if (typeof qData.correct === "number" && opts?.[qData.correct] !== undefined) {
+          const opt = opts[qData.correct];
+          correctLabel = typeof opt === "object" ? "[image]" : String(opt);
+        } else {
+          correctLabel = String(qData.correct ?? "");
+        }
+      } else if (q.question_type === "composite_question") {
+        const items = Array.isArray(qData.items) ? qData.items : [];
+        correctLabel = items.map((item, idx) => {
+          const label = subLabels[idx] ?? String(idx + 1);
+          const itemOpts = Array.isArray(item?.options) ? item.options : [];
+          const correctVal = item?.correct;
+          if ((item?.type === "dropdown" || item?.type === "option") && typeof correctVal === "number" && itemOpts[correctVal] !== undefined) {
+            return `(${label}). ${String(itemOpts[correctVal])}`;
+          }
+          const display = Array.isArray(correctVal) ? correctVal.join(", ") : String(correctVal ?? "");
+          return `(${label}). ${display}`;
+        }).join(" | ");
+      } else if (q.question_type === "dialogue_dropdown") {
+        const dialogue = qData.dialogue || [];
+        const resolved = dialogue
+          .map((line, idx) => {
+            // Only process dropdown lines (text === null and has options)
+            if (!line.options) return null;
+            const label = subLabels[idx] ?? String(idx + 1);
+            const opts = line.options || [];
+            if (typeof line.correct === "number" && opts[line.correct] !== undefined) {
+              return `(${label}). ${String(opts[line.correct])}`;
+            }
+            return null;
+          })
+          .filter(Boolean);
+        correctLabel = resolved.length > 0 ? resolved.join(" | ") : "(see dropdown)";
       } else {
         correctLabel = String(qData.correct ?? qData.correct_sentence ?? qData.correct_answer ?? "");
       }
 
+      // ── Composite question: one row per sub-item ──────────────────
+      if (q.question_type === "composite_question") {
+        const items = Array.isArray(qData.items) ? qData.items : [];
+
+        items.forEach((item, subIdx) => {
+          const label = subLabels[subIdx] ?? String(subIdx + 1);
+          const itemOpts = Array.isArray(item?.options) ? item.options : [];
+          const correctVal = item?.correct;
+
+          // Resolve correct answer text for this sub-item
+          let subCorrect = "";
+          if (item?.type === "dropdown" || item?.type === "option") {
+            if (typeof correctVal === "number" && itemOpts[correctVal] !== undefined) {
+              subCorrect = String(itemOpts[correctVal]);
+            } else {
+              subCorrect = String(correctVal ?? "");
+            }
+          } else {
+            subCorrect = Array.isArray(correctVal) ? correctVal.join(", ") : String(correctVal ?? "");
+          }
+
+          // Use sub-item's own text (e.g. fill-blank sentence) if available,
+          // otherwise fall back to the parent question text.
+          const subQText = item.text?.trim() || item.prompt?.trim() || qText;
+
+          const subRowData = {
+            num: `${qIdx + 1}(${label})`,
+            question: subQText,
+            type: "composite part",
+            correct: subCorrect,
+          };
+
+          // Resolve a single sub-item raw value to display text
+          function resolveSubItem(v) {
+            if (v === undefined || v === null) return "—";
+            if (item?.type === "dropdown" || item?.type === "option") {
+              if (typeof v === "number" && itemOpts[v] !== undefined) return String(itemOpts[v]);
+              return String(v);
+            }
+            return Array.isArray(v) ? v.join(", ") : String(v);
+          }
+
+          // Check per-sub-item correctness inline (DB only stores whole-question is_correct)
+          function isSubItemCorrect(v) {
+            if (v === undefined || v === null) return null;
+            if (item?.type === "dropdown" || item?.type === "option") {
+              return typeof v === "number" && v === item.correct;
+            }
+            const strip = (s) => String(s).replace(/[.,!?;:'"()]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+            const correctBlanks = Array.isArray(item.correct) ? item.correct : [item.correct ?? ""];
+            const userBlanks = Array.isArray(v) ? v : [v];
+            if (correctBlanks.length !== userBlanks.length) return false;
+            return correctBlanks.every((c, i) => strip(c) === strip(userBlanks[i] ?? ""));
+          }
+
+          // Fill each student's cell for this sub-item
+          for (const sub of submissions) {
+            const ansRow = answerMap[sub.submission_id]?.[q.question_id];
+            let rawAns = ansRow?.user_answer ?? null;
+            if (typeof rawAns === "string") {
+              try { rawAns = JSON.parse(rawAns); } catch { /* keep */ }
+            }
+            let subVal = null;
+            if (rawAns && typeof rawAns === "object" && !Array.isArray(rawAns)) {
+              subVal = rawAns[subIdx] ?? rawAns[String(subIdx)] ?? null;
+            }
+            subRowData[`s_${sub.submission_id}`] = resolveSubItem(subVal);
+          }
+
+          const subRow = ws.addRow(subRowData);
+          subRow.height = 22;
+
+          // Colour each student's cell with per-sub-item correctness
+          submissions.forEach((sub, sIdx) => {
+            const ansRow = answerMap[sub.submission_id]?.[q.question_id];
+            const cell = subRow.getCell(fixedCols.length + sIdx + 1);
+            cell.alignment = { wrapText: true, vertical: "top" };
+
+            let rawAns = ansRow?.user_answer ?? null;
+            if (typeof rawAns === "string") {
+              try { rawAns = JSON.parse(rawAns); } catch { /* keep */ }
+            }
+            let subVal = null;
+            if (rawAns && typeof rawAns === "object" && !Array.isArray(rawAns)) {
+              subVal = rawAns[subIdx] ?? rawAns[String(subIdx)] ?? null;
+            }
+
+            const correctness = isSubItemCorrect(subVal);
+            if (correctness === true) {
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } }; // green
+            } else if (correctness === false) {
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } }; // red
+            }
+            if (!ansRow) {
+              cell.font = { italic: true, color: { argb: "FF9CA3AF" } };
+            }
+          });
+
+          // Zebra stripe alternate sub-rows
+          if (subIdx % 2 !== 0) {
+            subRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+              if (colNum <= fixedCols.length && !cell.fill?.fgColor) {
+                cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+              }
+            });
+          }
+        });
+
+        return; // Skip normal single-row path for composite questions
+      }
+
+      // ── All other question types: single row ───────────────────────
       const rowData = {
         num: qIdx + 1,
         question: qText,
@@ -1257,7 +1464,6 @@ async function exportSubmissionsExcel(req, res) {
           try { rawAns = JSON.parse(rawAns); } catch { /* keep */ }
         }
         const formatted = formatAnswerForExcel(rawAns, qData, q.question_type);
-        const isCorrect = ansRow?.is_correct;
         rowData[`s_${sub.submission_id}`] = formatted;
       }
 

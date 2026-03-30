@@ -96,9 +96,12 @@ async function getDailyReport(req, res) {
             username,
             phone,
             signup_source,
-            TO_CHAR(created_at AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM') AS install_time_ist
+            TO_CHAR(
+              ((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata'),
+              'HH12:MI AM'
+            ) AS install_time_ist
           FROM app_user
-          WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = $1
+          WHERE DATE(((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')) = $1::date
             AND role = 'user'
           ORDER BY created_at ASC`,
         [today],
