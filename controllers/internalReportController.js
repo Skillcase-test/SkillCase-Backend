@@ -18,6 +18,8 @@ async function getDailyReport(req, res) {
       newInstalls,
       sessionStats,
       eventRegistrations,
+      hardcoreExamSummary,
+      hardcoreExamScores,
     ] = await Promise.all([
       // Who maintained streak today (daily_goal_met = true)
       pool.query(
@@ -132,7 +134,79 @@ async function getDailyReport(req, res) {
   ORDER BY er.registered_at ASC`,
         [today],
       ),
+
+      // Hardcore exams conducted yesterday (exam-level summary)
+      pool.query(
+        `SELECT
+            ht.test_id,
+            ht.title,
+            ht.proficiency_level,
+            ht.duration_minutes,
+            COUNT(s.submission_id) AS participants,
+            COUNT(*) FILTER (WHERE s.status = 'completed') AS completed_count,
+            COUNT(*) FILTER (WHERE s.status = 'auto_closed') AS auto_closed_count,
+            COUNT(*) FILTER (WHERE s.status = 'warned_out') AS warned_out_count,
+            ROUND(AVG(s.score)::numeric, 2) AS avg_score
+          FROM hardcore_test ht
+          JOIN hardcore_test_submission s ON s.test_id = ht.test_id
+          WHERE DATE(((COALESCE(s.finished_at, s.started_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')) = $1::date
+          GROUP BY ht.test_id, ht.title, ht.proficiency_level, ht.duration_minutes
+          ORDER BY participants DESC, avg_score DESC NULLS LAST`,
+        [today],
+      ),
+
+      // Student-wise hardcore exam scores yesterday
+      pool.query(
+        `SELECT
+            ht.test_id,
+            ht.title AS exam_title,
+            u.fullname,
+            u.username,
+            s.status,
+            s.warning_count,
+            s.earned_points,
+            s.total_points,
+            s.score,
+            ((s.started_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata') AS started_at_ist,
+            ((s.finished_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata') AS finished_at_ist
+          FROM hardcore_test_submission s
+          JOIN hardcore_test ht ON ht.test_id = s.test_id
+          JOIN app_user u ON u.user_id = s.user_id
+          WHERE DATE(((COALESCE(s.finished_at, s.started_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')) = $1::date
+          ORDER BY ht.title, s.score DESC NULLS LAST, u.fullname`,
+        [today],
+      ),
     ]);
+
+    const submissionsByTestId = hardcoreExamScores.rows.reduce((acc, row) => {
+      if (!acc[row.test_id]) {
+        acc[row.test_id] = [];
+      }
+      acc[row.test_id].push(row);
+      return acc;
+    }, {});
+
+    const hardcoreExams = hardcoreExamSummary.rows.map((exam) => {
+      const submissions = submissionsByTestId[exam.test_id] || [];
+      const scoredSubmissions = submissions.filter(
+        (s) => s.score !== null && s.score !== undefined,
+      );
+
+      const topPerformers = [...scoredSubmissions]
+        .sort((a, b) => Number(b.score) - Number(a.score))
+        .slice(0, 5);
+
+      const lowPerformers = [...scoredSubmissions]
+        .sort((a, b) => Number(a.score) - Number(b.score))
+        .slice(0, 5);
+
+      return {
+        ...exam,
+        topPerformers,
+        lowPerformers,
+        submissions,
+      };
+    });
 
     res.status(200).json({
       date: today,
@@ -152,6 +226,12 @@ async function getDailyReport(req, res) {
       eventRegistrations: {
         count: eventRegistrations.rows.length,
         registrations: eventRegistrations.rows,
+      },
+      hardcoreExamReport: {
+        examsConductedCount: hardcoreExams.length,
+        totalSubmissions: hardcoreExamScores.rows.length,
+        exams: hardcoreExams,
+        submissions: hardcoreExamScores.rows,
       },
     });
   } catch (error) {
