@@ -3,6 +3,7 @@ const { pool } = require("../util/db");
 const { v4: uuidv4 } = require("uuid");
 
 const config = require("../config/configuration");
+const posthog = require("../util/posthog");
 
 const { generateOtp, sendOtp } = require("../services/fast2smsService");
 const { insertOrGetContact } = require("../services/biginService");
@@ -376,6 +377,21 @@ async function completeSignup(req, res) {
       config.JWT_SECRET_KEY,
       { expiresIn: "60d" },
     );
+
+    if (posthog) {
+      posthog.capture({
+        distinctId: String(user.user_id),
+        event: 'user_registered',
+        properties: {
+          signup_source: signup_source || "web",
+          qualification: qualification,
+          language_level: language_level,
+          experience: experience,
+          proficiency_level: proficiencyLevel,
+          platform: 'backend'
+        }
+      });
+    }
 
     res.json({
       status: "success",

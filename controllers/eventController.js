@@ -11,6 +11,7 @@ const {
 } = require("../services/aiSensyService");
 const { insertEventRegistrant } = require("../services/biginService");
 const { formatDateInTimezone } = require("../util/dateUtils");
+const posthog = require("../util/posthog");
 
 // Helper: Generate slug from title
 function generateSlug(title) {
@@ -713,6 +714,24 @@ async function registerForEvent(req, res) {
       });
     } catch (biginErr) {
       console.error("[Bigin] Event registration sync failed:", biginErr);
+    }
+
+    if (posthog) {
+      posthog.capture({
+        distinctId: phone,
+        event: 'event_registered',
+        properties: {
+          event_id: event.event_id,
+          event_title: event.title,
+          slug: slug,
+          name: name,
+          email: email,
+          phone: phone,
+          instance_date: parsedInstanceDate ? parsedInstanceDate.toISOString() : null,
+          user_id: user_id,
+          platform: 'backend'
+        }
+      });
     }
 
     res.status(200).json({

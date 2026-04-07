@@ -1075,6 +1075,20 @@ CREATE TABLE IF NOT EXISTS interview_submission_answer (
 CREATE INDEX IF NOT EXISTS idx_interview_answer_submission ON interview_submission_answer(submission_id, answer_order);
 `;
 
+const createWiseTranscripts = `
+CREATE TABLE IF NOT EXISTS wise_transcripts (
+  session_id VARCHAR(50) PRIMARY KEY,
+  class_id   VARCHAR(50) NOT NULL,
+  session_date DATE,
+  instructor_name VARCHAR(255),
+  student_words JSONB NOT NULL DEFAULT '{}',
+  total_student_words INTEGER DEFAULT 0,
+  processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_wise_transcripts_class ON wise_transcripts(class_id);
+CREATE INDEX IF NOT EXISTS idx_wise_transcripts_date ON wise_transcripts(session_date);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -1119,4 +1133,5 @@ module.exports = {
   seedLandingPageDefaults,
   createNewsTables,
   createInterviewToolTables,
+  createWiseTranscripts,
 };

@@ -1,5 +1,5 @@
 const express = require("express");
-const { getDailyReport } = require("../controllers/internalReportController");
+const { getDailyReport, getOpsReport } = require("../controllers/internalReportController");
 
 const router = express.Router();
 
@@ -12,5 +12,6 @@ function internalApiKeyMiddleware(req, res, next) {
 }
 
 router.get("/daily-report", internalApiKeyMiddleware, getDailyReport);
+router.get("/ops-report", internalApiKeyMiddleware, getOpsReport);
 
 module.exports = router;

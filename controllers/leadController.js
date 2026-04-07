@@ -1,5 +1,6 @@
 const { pool } = require("../util/db");
 const { sendWhatsAppMessage } = require("../services/aiSensyService");
+const posthog = require("../util/posthog");
 const axios = require("axios");
 
 // Template configuration
@@ -125,6 +126,23 @@ async function handleWebsiteLead(req, res) {
     );
 
     const leadId = result.rows[0].id;
+    
+    if (posthog) {
+      posthog.capture({
+        distinctId: formattedPhone,
+        event: 'lead_captured',
+        properties: {
+          lead_id: leadId,
+          name: name,
+          phone: formattedPhone,
+          qualification: qualification || null,
+          experience: experience || null,
+          source: source || "website",
+          platform: 'backend'
+        }
+      });
+    }
+
     console.log(
       `[Lead] New website lead created: ${leadId} - ${name} (${formattedPhone})`
     );
@@ -234,6 +252,21 @@ async function fetchAndProcessFacebookLead(leadgenId) {
       [name, formattedPhone, leadgenId]
     );
     const leadId = result.rows[0].id;
+    
+    if (posthog) {
+      posthog.capture({
+        distinctId: formattedPhone,
+        event: 'lead_captured',
+        properties: {
+          lead_id: leadId,
+          name: name,
+          phone: formattedPhone,
+          source: 'facebook',
+          platform: 'backend'
+        }
+      });
+    }
+
     console.log(
       `[Facebook] New lead created: ${leadId} - ${name} (${formattedPhone})`
     );

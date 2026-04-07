@@ -76,6 +76,9 @@ async function initDb(pool) {
     // Interview
     await pool.query(queries.createInterviewToolTables);
 
+    // Wise
+    await pool.query(queries.createWiseTranscripts);
+
     console.log("Tables created or already exist!");
   } catch (err) {
     console.error(`Error occurred while creating tables: ${err}`);

@@ -55,6 +55,9 @@ const syncRouter = require("./routes/syncRouter");
 const interviewToolAdminRouter = require("./routes/interviewToolAdminRouter");
 const interviewToolPublicRouter = require("./routes/interviewToolPublicRouter");
 
+// Wise
+const wiseRouter = require("./routes/wiseRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
@@ -72,6 +75,18 @@ const {
 } = require("./middlewares/auth_middleware");
 
 const { initializeGemini } = require("./config/gemini");
+const { sendErrorToDiscord } = require("./util/discordNotifier");
+
+// Process-level error catchers for things outside the Express request lifecycle
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  sendErrorToDiscord(reason instanceof Error ? reason : new Error(String(reason)), { type: "unhandledRejection" });
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+  sendErrorToDiscord(error, { type: "uncaughtException" });
+});
 
 const app = express();
 const cors = require("cors");
@@ -100,6 +115,7 @@ app.use(
       "Authorization",
       "x-access-code",
       "x-internal-api-key",
+      "x-wise-access-code",
     ],
     credentials: true,
   }),
@@ -217,6 +233,24 @@ app.use(
 );
 
 app.use("/api/interview-tools", interviewToolPublicRouter);
+
+// Wise
+app.use("/api/wise", wiseRouter);
+
+// Global Error Handler Middleware
+app.use((err, req, res, next) => {
+  console.error("Express Error Middleware Caught:", err);
+  
+  // Fire and forget to Discord
+  sendErrorToDiscord(err, {
+    method: req.method,
+    url: req.originalUrl || req.url,
+    body: req.body,
+    user: req.user ? req.user.user_id : "unauth/unknown"
+  });
+
+  res.status(err.status || 500).json({ error: "Internal Server Error" });
+});
 
 app.listen(3000, () => {
   console.log("server is running at http://localhost:3000");

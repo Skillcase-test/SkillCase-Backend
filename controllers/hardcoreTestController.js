@@ -1,4 +1,5 @@
 const { pool } = require("../util/db");
+const posthog = require("../util/posthog");
 
 const NON_ANSWERABLE_TYPES = new Set([
   "page_break",
@@ -782,6 +783,32 @@ async function submitExam(req, res) {
     }
 
     const result = await gradeSubmission(testId, sub.submission_id, "completed");
+
+    if (posthog) {
+      posthog.capture({
+        distinctId: String(userId),
+        event: 'exam_submitted',
+        properties: {
+          test_id: testId,
+          score: result.score,
+          earned_points: result.earned_points,
+          total_points: result.total_points,
+          warning_count: sub.warning_count,
+          platform: 'backend'
+        }
+      });
+      posthog.capture({
+        distinctId: String(userId),
+        event: 'exam_score_generated',
+        properties: {
+          test_id: testId,
+          score: result.score,
+          earned_points: result.earned_points,
+          total_points: result.total_points,
+          platform: 'backend'
+        }
+      });
+    }
 
     res.json({
       msg: "Exam submitted successfully",
