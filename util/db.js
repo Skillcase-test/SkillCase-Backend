@@ -79,6 +79,9 @@ async function initDb(pool) {
     // Wise
     await pool.query(queries.createWiseTranscripts);
 
+    // A1 revamp
+    await pool.query(queries.createA1Tables);
+
     console.log("Tables created or already exist!");
   } catch (err) {
     console.error(`Error occurred while creating tables: ${err}`);

@@ -120,6 +120,7 @@ async function login(req, res) {
         role: user.role,
         user_prof_level: user.current_profeciency_level,
         onboarding_completed: user.onboarding_completed,
+        a1_onboarding_completed: user.a1_onboarding_completed || false,
       },
       token,
     });
@@ -157,6 +158,7 @@ async function me(req, res) {
         role: user.role,
         user_prof_level: user.current_profeciency_level,
         onboarding_completed: user.onboarding_completed,
+        a1_onboarding_completed: user.a1_onboarding_completed || false,
         a2_onboarding_completed: user.a2_onboarding_completed || false,
         fullname: user.fullname || "",
         profile_pic_url: user.profile_pic_url || "",
@@ -312,6 +314,21 @@ async function completeA2Onboarding(req, res) {
   }
 }
 
+async function completeA1Onboarding(req, res) {
+  const { user_id } = req.user;
+
+  try {
+    await pool.query(
+      "UPDATE app_user SET a1_onboarding_completed = TRUE WHERE user_id = $1",
+      [user_id],
+    );
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Error updating A1 onboarding status" });
+  }
+}
+
 // GET PROFILE
 async function getProfile(req, res) {
   if (!req.user) {
@@ -448,7 +465,11 @@ async function updateProfile(req, res) {
         .then(async (resp) => {
           if (!resp.ok) {
             const errText = await resp.text();
-            console.error("PHP profile sync returned error:", resp.status, errText);
+            console.error(
+              "PHP profile sync returned error:",
+              resp.status,
+              errText,
+            );
           }
         })
         .catch((err) => {
@@ -523,6 +544,7 @@ module.exports = {
   updateAppVersion,
   getArticleEducation,
   completeArticleEducation,
+  completeA1Onboarding,
   completeA2Onboarding,
   getProfile,
   updateProfile,

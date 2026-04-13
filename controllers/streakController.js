@@ -16,6 +16,85 @@ function getYesterdayIST() {
   return istTime.toISOString().split("T")[0];
 }
 
+// Get global top-5 leaderboard by current streak with the authenticated user's rank
+async function getTopStreakLeaderboard(req, res) {
+  try {
+    const userId = req.user?.user_id;
+    if (!userId) {
+      return res.status(400).json({ msg: "User not authenticated" });
+    }
+
+    const today = getTodayIST();
+
+    const result = await pool.query(
+      `WITH today_activity AS (
+         SELECT user_id, COALESCE(points_earned, 0) AS today_points
+         FROM user_daily_activity
+         WHERE activity_date = $1
+       ),
+       leaderboard_base AS (
+         SELECT
+           u.user_id,
+           u.username,
+           u.current_profeciency_level AS user_prof_level,
+           COALESCE(s.current_streak, 0)::INT AS current_streak,
+           COALESCE(s.longest_streak, 0)::INT AS longest_streak,
+           s.last_goal_date,
+           s.streak_updated_at,
+           COALESCE(a.today_points, 0)::DECIMAL(10,4) AS today_points
+         FROM app_user u
+         LEFT JOIN user_streak s ON s.user_id = u.user_id
+         LEFT JOIN today_activity a ON a.user_id = u.user_id
+       ),
+       ranked AS (
+         SELECT
+           lb.*,
+           ROW_NUMBER() OVER (
+             ORDER BY
+               lb.current_streak DESC,
+               lb.today_points DESC,
+               COALESCE(lb.streak_updated_at, TIMESTAMP '1970-01-01') ASC,
+               lb.user_id ASC
+           ) AS rank
+         FROM leaderboard_base lb
+       )
+       SELECT *
+       FROM ranked
+       WHERE rank <= 5 
+          OR rank BETWEEN 
+               (SELECT rank FROM ranked WHERE user_id = $2 LIMIT 1) - 5 
+           AND (SELECT rank FROM ranked WHERE user_id = $2 LIMIT 1) + 5
+       ORDER BY rank ASC`,
+      [today, userId],
+    );
+
+    const normalizeRow = (row) => ({
+      rank: Number(row.rank),
+      user_id: row.user_id,
+      username: row.username,
+      user_prof_level: row.user_prof_level,
+      current_streak: Number(row.current_streak || 0),
+      longest_streak: Number(row.longest_streak || 0),
+      last_goal_date: row.last_goal_date,
+      today_points: Number(row.today_points || 0),
+    });
+
+    const rows = result.rows.map(normalizeRow);
+    const leaderboard = rows; // Frontend dynamically evaluates active padded viewport boundaries
+    const myRank = rows.find((row) => row.user_id === userId) || null;
+
+    return res.status(200).json({
+      dayKeyIST: today,
+      generatedAt: new Date().toISOString(),
+      leaderboard,
+      myRank,
+    });
+  } catch (err) {
+    console.error("Error fetching streak leaderboard:", err);
+    return res.status(500).json({ msg: "Error fetching streak leaderboard" });
+  }
+}
+
 // Get user's streak data and today's progress - OPTIMIZED
 async function getStreakData(req, res) {
   try {
@@ -199,11 +278,17 @@ async function getLastChapterProgress(req, res) {
 
     // Get user's proficiency level
     const userResult = await pool.query(
-      `SELECT current_profeciency_level FROM app_user WHERE user_id = $1`,
+      `SELECT current_profeciency_level, a1_revamp_status FROM app_user WHERE user_id = $1`,
       [userId],
     );
 
     const profLevel = userResult.rows[0]?.current_profeciency_level || "A1";
+    const a1RevampStatus = userResult.rows[0]?.a1_revamp_status || "legacy_a1";
+    const isRevampA1 =
+      profLevel.toUpperCase() === "A1" &&
+      ["revamp_opted_in", "revamp_forced_after_deadline"].includes(
+        a1RevampStatus,
+      );
 
     // A2 User - Query A2 flashcard progress from a2_flashcard_progress table
     if (profLevel.toUpperCase() === "A2") {
@@ -240,7 +325,52 @@ async function getLastChapterProgress(req, res) {
       });
     }
 
-    // A1 User - Original query
+    if (isRevampA1) {
+      const revampResult = await pool.query(
+        `SELECT
+          c.id AS chapter_id,
+          c.chapter_name,
+          s.set_id,
+          s.number_of_cards,
+          COALESCE(p.current_index, 0) AS current_index,
+          COALESCE(p.is_completed, false) AS is_completed
+        FROM a1_chapter c
+        JOIN a1_flashcard_set s ON s.chapter_id = c.id
+        LEFT JOIN a1_flashcard_progress p ON p.set_id = s.set_id AND p.user_id = $1
+        WHERE c.module = 'flashcard' AND c.is_active = true
+          AND COALESCE(p.is_completed, false) = false
+        ORDER BY c.order_index ASC
+        LIMIT 1`,
+        [userId],
+      );
+
+      if (revampResult.rows.length === 0) {
+        return res.status(200).json({ hasProgress: false });
+      }
+
+      const chapter = revampResult.rows[0];
+      const totalCards = Number(chapter.number_of_cards || 0);
+      const currentIndexRaw = Number(chapter.current_index || 0);
+      const currentIndex =
+        totalCards > 0
+          ? Math.max(0, Math.min(currentIndexRaw, totalCards - 1))
+          : 0;
+
+      return res.status(200).json({
+        hasProgress: true,
+        chapterId: chapter.chapter_id,
+        chapterName: chapter.chapter_name,
+        setId: chapter.set_id,
+        setName: chapter.chapter_name,
+        currentIndex,
+        totalCards,
+        proficiencyLevel: "A1",
+        isA2: false,
+        isRevampA1: true,
+      });
+    }
+
+    // A1 legacy user - original query
     const result = await pool.query(
       `WITH chapter_stats AS (
         SELECT 
@@ -396,6 +526,7 @@ async function saveFlippedCard(req, res) {
 
 module.exports = {
   getStreakData,
+  getTopStreakLeaderboard,
   logStreakPoints,
   getLastChapterProgress,
   saveFlippedCard,

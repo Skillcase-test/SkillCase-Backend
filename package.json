@@ -1,6 +1,6 @@
 {
   "name": "app",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "main": "index.js",
   "scripts": {
     "test": "jest",
@@ -21,6 +21,7 @@
     "@aws-sdk/client-translate": "^3.1012.0",
     "@aws-sdk/s3-request-presigner": "^3.1017.0",
     "@google/genai": "^1.30.0",
+    "adm-zip": "^0.5.17",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.8.0",

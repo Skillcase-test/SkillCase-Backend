@@ -58,6 +58,11 @@ const interviewToolPublicRouter = require("./routes/interviewToolPublicRouter");
 // Wise
 const wiseRouter = require("./routes/wiseRouter");
 
+// A1 revamp
+const a1Router = require("./routes/a1/a1Router");
+const a1AdminRouter = require("./routes/a1/a1AdminRouter");
+const a1MigrationRouter = require("./routes/a1/a1MigrationRouter");
+
 const { initStreakNotificationJobs } = require("./jobs/streakNotificationJob");
 const { initMessageSchedulerJob } = require("./jobs/messageSchedulerJob");
 const { startOtpCleanupJob } = require("./jobs/cleanupOtp");
@@ -80,7 +85,10 @@ const { sendErrorToDiscord } = require("./util/discordNotifier");
 // Process-level error catchers for things outside the Express request lifecycle
 process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
-  sendErrorToDiscord(reason instanceof Error ? reason : new Error(String(reason)), { type: "unhandledRejection" });
+  sendErrorToDiscord(
+    reason instanceof Error ? reason : new Error(String(reason)),
+    { type: "unhandledRejection" },
+  );
 });
 
 process.on("uncaughtException", (error) => {
@@ -167,6 +175,11 @@ app.use(
 app.use("/api/a2", authMiddleware, a2Router);
 app.use("/api/admin/a2", authMiddleware, authorizeRole("admin"), a2AdminRouter);
 
+// A1 revamp
+app.use("/api/a1", authMiddleware, a1Router);
+app.use("/api/admin/a1", authMiddleware, authorizeRole("admin"), a1AdminRouter);
+app.use("/api/a1-migration", authMiddleware, a1MigrationRouter);
+
 // Hardcore Test Module
 app.use("/api/exam-audio", examAudioRouter);
 app.use("/api/exam", authMiddleware, examRouter);
@@ -240,13 +253,13 @@ app.use("/api/wise", wiseRouter);
 // Global Error Handler Middleware
 app.use((err, req, res, next) => {
   console.error("Express Error Middleware Caught:", err);
-  
+
   // Fire and forget to Discord
   sendErrorToDiscord(err, {
     method: req.method,
     url: req.originalUrl || req.url,
     body: req.body,
-    user: req.user ? req.user.user_id : "unauth/unknown"
+    user: req.user ? req.user.user_id : "unauth/unknown",
   });
 
   res.status(err.status || 500).json({ error: "Internal Server Error" });

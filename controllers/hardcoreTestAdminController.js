@@ -1212,7 +1212,7 @@ async function exportSubmissionsExcel(req, res) {
       answerMap[row.submission_id][row.question_id] = row;
     }
 
-    // ── Build workbook ────────────────────────────────────────────
+    // Build workbook
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "SkillCase Admin";
     workbook.created = new Date();
@@ -1221,7 +1221,7 @@ async function exportSubmissionsExcel(req, res) {
       views: [{ state: "frozen", xSplit: 4, ySplit: 1 }],
     });
 
-    // ── Column definitions ─────────────────────────────────────────
+    // Column definitions
     const fixedCols = [
       { header: "#", key: "num", width: 5 },
       { header: "Question", key: "question", width: 45 },
@@ -1252,7 +1252,7 @@ async function exportSubmissionsExcel(req, res) {
       };
     });
 
-    // ── Question rows ──────────────────────────────────────────────
+    // Question rows
     questions.forEach((q, qIdx) => {
       const qData = typeof q.question_data === "string"
         ? JSON.parse(q.question_data)
@@ -1341,7 +1341,7 @@ async function exportSubmissionsExcel(req, res) {
         correctLabel = String(qData.correct ?? qData.correct_sentence ?? qData.correct_answer ?? "");
       }
 
-      // ── Composite question: one row per sub-item ──────────────────
+      // Composite question: one row per sub-item
       if (q.question_type === "composite_question") {
         const items = Array.isArray(qData.items) ? qData.items : [];
 
@@ -1452,7 +1452,7 @@ async function exportSubmissionsExcel(req, res) {
         return; // Skip normal single-row path for composite questions
       }
 
-      // ── All other question types: single row ───────────────────────
+      // All other question types: single row
       const rowData = {
         num: qIdx + 1,
         question: qText,
@@ -1502,7 +1502,7 @@ async function exportSubmissionsExcel(req, res) {
       }
     });
 
-    // ── Score summary rows ─────────────────────────────────────────
+    // Score summary rows
     ws.addRow({}); // spacer
 
     const scoreRow = ws.addRow({
@@ -1541,7 +1541,7 @@ async function exportSubmissionsExcel(req, res) {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E7FF" } };
     });
 
-    // ── Send response ──────────────────────────────────────────────
+    // Send response
     const safeTitle = examTitle.replace(/[^a-z0-9_\-]/gi, "_").slice(0, 40);
     res.setHeader(
       "Content-Type",

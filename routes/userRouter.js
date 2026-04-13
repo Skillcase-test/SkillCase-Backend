@@ -20,6 +20,12 @@ router.post(
 );
 
 router.post(
+  "/complete-a1-onboarding",
+  authMiddleware,
+  userController.completeA1Onboarding,
+);
+
+router.post(
   "/complete-a2-onboarding",
   authMiddleware,
   userController.completeA2Onboarding,
