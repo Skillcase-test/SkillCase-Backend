@@ -68,10 +68,12 @@ async function getTopStreakLeaderboard(req, res) {
       [today, userId],
     );
 
+    const isPhoneNumber = (str) => typeof str === 'string' && /^\+?[\d\s-]{10,}$/.test(str.trim());
+
     const normalizeRow = (row) => ({
       rank: Number(row.rank),
       user_id: row.user_id,
-      username: row.username,
+      username: isPhoneNumber(row.username) ? "User" : row.username,
       user_prof_level: row.user_prof_level,
       current_streak: Number(row.current_streak || 0),
       longest_streak: Number(row.longest_streak || 0),
