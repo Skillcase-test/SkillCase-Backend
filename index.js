@@ -80,7 +80,11 @@ const {
 } = require("./middlewares/auth_middleware");
 
 const { initializeGemini } = require("./config/gemini");
+const { RUN_SCHEDULED_JOBS } = require("./config/configuration");
 const { sendErrorToDiscord } = require("./util/discordNotifier");
+
+const DB_INIT_STRICT =
+  String(process.env.DB_INIT_STRICT || "false").toLowerCase() === "true";
 
 // Process-level error catchers for things outside the Express request lifecycle
 process.on("unhandledRejection", (reason, promise) => {
@@ -131,15 +135,22 @@ app.use(
 
 const pool = db.pool;
 
-db.initDb(pool);
+function startScheduledJobs() {
+  if (!RUN_SCHEDULED_JOBS) {
+    console.warn(
+      "[Jobs] RUN_SCHEDULED_JOBS is false. Skipping cron initialization.",
+    );
+    return;
+  }
 
-initStreakNotificationJobs();
-// initMessageSchedulerJob();
-startOtpCleanupJob();
-initEventReminderJob();
-initStreakResetJob();
-initNewsIngestJob();
-initNewsNotificationJob();
+  initStreakNotificationJobs();
+  // initMessageSchedulerJob();
+  startOtpCleanupJob();
+  initEventReminderJob();
+  initStreakResetJob();
+  initNewsIngestJob();
+  initNewsNotificationJob();
+}
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -198,12 +209,25 @@ app.use(
 
 app.use("/api/sso", ssoRouter);
 
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+
+    res.status(200).json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      db: "connected",
+    });
+  } catch (error) {
+    console.error("[Health] DB probe failed:", error.message);
+    res.status(503).json({
+      status: "unhealthy",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      db: "disconnected",
+    });
+  }
 });
 
 app.use("/api/streak", authMiddleware, streakRouter);
@@ -265,6 +289,71 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: "Internal Server Error" });
 });
 
-app.listen(3000, () => {
-  console.log("server is running at http://localhost:3000");
-});
+let isShuttingDown = false;
+
+async function gracefulShutdown(server, signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`[Shutdown] Received ${signal}. Draining connections...`);
+
+  server.close(async (closeError) => {
+    if (closeError) {
+      console.error("[Shutdown] HTTP server close error:", closeError);
+    }
+
+    try {
+      await pool.end();
+      console.log("[Shutdown] DB pool closed");
+      process.exit(closeError ? 1 : 0);
+    } catch (poolError) {
+      console.error("[Shutdown] DB pool close failed:", poolError);
+      process.exit(1);
+    }
+  });
+
+  setTimeout(() => {
+    console.error("[Shutdown] Force exit after timeout");
+    process.exit(1);
+  }, 15000).unref();
+}
+
+async function startServer() {
+  try {
+    try {
+      await db.initDb(pool);
+    } catch (initError) {
+      const message = String(initError?.message || "").toLowerCase();
+      const isConnectivityError =
+        message.includes("connection") ||
+        message.includes("timeout") ||
+        message.includes("econn") ||
+        message.includes("no pg_hba") ||
+        message.includes("could not connect") ||
+        message.includes("server closed");
+
+      if (DB_INIT_STRICT || isConnectivityError) {
+        throw initError;
+      }
+
+      console.warn(
+        "[Startup] DB init had non-fatal schema error. Continuing because DB_INIT_STRICT=false:",
+        initError.message,
+      );
+    }
+
+    startScheduledJobs();
+
+    const server = app.listen(3000, () => {
+      console.log("server is running at http://localhost:3000");
+    });
+
+    process.on("SIGTERM", () => gracefulShutdown(server, "SIGTERM"));
+    process.on("SIGINT", () => gracefulShutdown(server, "SIGINT"));
+  } catch (error) {
+    console.error("[Startup] Failed to initialize backend:", error);
+    process.exit(1);
+  }
+}
+
+startServer();

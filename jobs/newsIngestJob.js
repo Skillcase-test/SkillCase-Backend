@@ -19,6 +19,9 @@ const {
   NEWS_API_COUNTRY,
   NEWS_API_LANGUAGE,
   NEWS_FETCH_LIMIT,
+  NEWS_API_TIMEOUT_MS,
+  NEWS_API_MAX_RETRIES,
+  NEWS_API_RETRY_BASE_DELAY_MS,
   NEWS_SUMMARY_MODEL_ID,
   NEWS_SUMMARY_INFERENCE_PROFILE_ID,
   NEWS_SUMMARY_REGION,
@@ -60,8 +63,11 @@ const imageBedrockClient = new BedrockRuntimeClient({
 const textDecoder = new TextDecoder("utf-8");
 let summarizationEnabled = true;
 let imageGenerationEnabled = NEWS_IMAGE_ENABLED;
+const NEWS_INGEST_LOCK_KEY = Number(process.env.NEWS_INGEST_LOCK_KEY || 924001);
 const summaryTargetModelId =
   NEWS_SUMMARY_INFERENCE_PROFILE_ID || NEWS_SUMMARY_MODEL_ID;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const safeText = (value = "") => String(value || "").trim();
 
@@ -456,6 +462,90 @@ const normalizeSummary = (candidate, fallback) => {
   return safeText(selected);
 };
 
+const parseRetryAfterSeconds = (value) => {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+
+  const retryAt = Date.parse(String(value || ""));
+  if (Number.isNaN(retryAt)) return 0;
+
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+};
+
+const isRetryableNewsApiStatus = (status) =>
+  [429, 500, 502, 503, 504].includes(Number(status));
+
+const fetchTopHeadlinesWithRetry = async () => {
+  let lastError;
+
+  for (let attempt = 1; attempt <= NEWS_API_MAX_RETRIES; attempt += 1) {
+    try {
+      return await axios.get(`${NEWS_API_BASE_URL}/top-headlines`, {
+        params: {
+          country: NEWS_API_COUNTRY,
+          lang: NEWS_API_LANGUAGE,
+          max: NEWS_FETCH_LIMIT,
+          apikey: NEWS_API_KEY,
+        },
+        timeout: NEWS_API_TIMEOUT_MS,
+      });
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.response?.status || 0);
+      const isRetryable = isRetryableNewsApiStatus(status);
+
+      if (!isRetryable || attempt === NEWS_API_MAX_RETRIES) {
+        throw error;
+      }
+
+      const retryAfterHeader = error?.response?.headers?.["retry-after"];
+      const retryAfterSeconds = parseRetryAfterSeconds(retryAfterHeader);
+      const backoffMs = retryAfterSeconds
+        ? retryAfterSeconds * 1000
+        : NEWS_API_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+
+      console.warn(
+        `[NewsIngest] News API failed with ${status || "network error"} (attempt ${attempt}/${NEWS_API_MAX_RETRIES}). Retrying in ${Math.ceil(backoffMs / 1000)}s`,
+      );
+      await sleep(backoffMs);
+    }
+  }
+
+  throw lastError;
+};
+
+const withIngestLock = async (task) => {
+  const client = await pool.connect();
+
+  try {
+    const lockResult = await client.query(
+      "SELECT pg_try_advisory_lock($1) AS locked",
+      [NEWS_INGEST_LOCK_KEY],
+    );
+
+    if (!lockResult.rows[0]?.locked) {
+      console.log(
+        "[NewsIngest] Another instance is already running ingestion. Skipping this trigger.",
+      );
+      return;
+    }
+
+    return await task();
+  } finally {
+    try {
+      await client.query("SELECT pg_advisory_unlock($1)", [
+        NEWS_INGEST_LOCK_KEY,
+      ]);
+    } catch (unlockError) {
+      console.warn(
+        "[NewsIngest] Failed to release advisory lock:",
+        unlockError.message,
+      );
+    }
+    client.release();
+  }
+};
+
 const buildNewsKey = (article) => {
   if (article.url) return safeText(article.url);
   const source = safeText(article?.source?.name || "unknown-source");
@@ -691,92 +781,82 @@ const ingestNews = async () => {
   }
 
   try {
-    const response = await axios.get(`${NEWS_API_BASE_URL}/top-headlines`, {
-      params: {
-        country: NEWS_API_COUNTRY,
-        lang: NEWS_API_LANGUAGE,
-        max: NEWS_FETCH_LIMIT,
-        apikey: NEWS_API_KEY,
-        max: NEWS_FETCH_LIMIT,
-        country: NEWS_API_COUNTRY,
-        lang: NEWS_API_LANGUAGE,
-      },
-      timeout: 15000,
-    });
+    await withIngestLock(async () => {
+      const response = await fetchTopHeadlinesWithRetry();
 
-    const articles = Array.isArray(response?.data?.articles)
-      ? response.data.articles
-      : [];
+      const articles = Array.isArray(response?.data?.articles)
+        ? response.data.articles
+        : [];
 
-    const imageStats = {
-      guided: 0,
-      promptOnly: 0,
-      fallback: 0,
-      disabled: 0,
-      error: 0,
-    };
-
-    for (const article of articles) {
-      const originalEnglishTitle = safeText(article.title);
-
-      if (!originalEnglishTitle) continue;
-
-      // Skip near-duplicate articles before expensive AI processing
-      const isDuplicate = await isTitleNearDuplicate(originalEnglishTitle);
-      if (isDuplicate) continue;
-
-      const {
-        shortTitle,
-        summary: englishSummary,
-        detailedSummary: englishContent,
-      } = await summarizeArticleInEnglish({
-        title: article.title,
-        description: article.description,
-        content: article.content,
-      });
-
-      const englishTitle = normalizeShortTitle(
-        shortTitle,
-        originalEnglishTitle,
-      );
-
-      const germanTitle = await translateToGerman(englishTitle);
-      const germanSummary = await translateToGerman(englishSummary);
-      const germanContent = await translateToGerman(englishContent);
-
-      const newsKey = buildNewsKey(article);
-      const sourceName = safeText(article?.source?.name || "Unknown");
-      const articleUrl = safeText(article.url);
-      const sourceImageUrl = safeText(article.image || article.urlToImage);
-      const publishedAt = article.publishedAt || null;
-
-      const generatedImage = await generateNewsImage({
-        title: englishTitle,
-        summary: englishSummary,
-        sourceImageUrl,
-        newsKey,
-      });
-
-      if (generatedImage.mode === "guided") imageStats.guided += 1;
-      else if (generatedImage.mode === "prompt-only")
-        imageStats.promptOnly += 1;
-      else if (generatedImage.mode === "disabled") imageStats.disabled += 1;
-      else if (generatedImage.mode === "error") imageStats.error += 1;
-      else imageStats.fallback += 1;
-
-      const imageUrl = safeText(generatedImage.imageUrl || sourceImageUrl);
-      const rawPayload = {
-        ...(article || {}),
-        _generatedImage: {
-          mode: generatedImage.mode,
-          promptLength: generatedImage.promptLength,
-          publicId: generatedImage.publicId,
-          sourceImageUsed: Boolean(sourceImageUrl),
-        },
+      const imageStats = {
+        guided: 0,
+        promptOnly: 0,
+        fallback: 0,
+        disabled: 0,
+        error: 0,
       };
 
-      await pool.query(
-        `
+      for (const article of articles) {
+        const originalEnglishTitle = safeText(article.title);
+
+        if (!originalEnglishTitle) continue;
+
+        // Skip near-duplicate articles before expensive AI processing
+        const isDuplicate = await isTitleNearDuplicate(originalEnglishTitle);
+        if (isDuplicate) continue;
+
+        const {
+          shortTitle,
+          summary: englishSummary,
+          detailedSummary: englishContent,
+        } = await summarizeArticleInEnglish({
+          title: article.title,
+          description: article.description,
+          content: article.content,
+        });
+
+        const englishTitle = normalizeShortTitle(
+          shortTitle,
+          originalEnglishTitle,
+        );
+
+        const germanTitle = await translateToGerman(englishTitle);
+        const germanSummary = await translateToGerman(englishSummary);
+        const germanContent = await translateToGerman(englishContent);
+
+        const newsKey = buildNewsKey(article);
+        const sourceName = safeText(article?.source?.name || "Unknown");
+        const articleUrl = safeText(article.url);
+        const sourceImageUrl = safeText(article.image || article.urlToImage);
+        const publishedAt = article.publishedAt || null;
+
+        const generatedImage = await generateNewsImage({
+          title: englishTitle,
+          summary: englishSummary,
+          sourceImageUrl,
+          newsKey,
+        });
+
+        if (generatedImage.mode === "guided") imageStats.guided += 1;
+        else if (generatedImage.mode === "prompt-only")
+          imageStats.promptOnly += 1;
+        else if (generatedImage.mode === "disabled") imageStats.disabled += 1;
+        else if (generatedImage.mode === "error") imageStats.error += 1;
+        else imageStats.fallback += 1;
+
+        const imageUrl = safeText(generatedImage.imageUrl || sourceImageUrl);
+        const rawPayload = {
+          ...(article || {}),
+          _generatedImage: {
+            mode: generatedImage.mode,
+            promptLength: generatedImage.promptLength,
+            publicId: generatedImage.publicId,
+            sourceImageUsed: Boolean(sourceImageUrl),
+          },
+        };
+
+        await pool.query(
+          `
           INSERT INTO news_article (
             news_key,
             source_name,
@@ -821,25 +901,26 @@ const ingestNews = async () => {
             raw_payload_json = EXCLUDED.raw_payload_json,
             updated_at = NOW()
         `,
-        [
-          newsKey,
-          sourceName,
-          articleUrl,
-          imageUrl,
-          publishedAt,
-          englishTitle,
-          englishSummary,
-          englishContent,
-          germanTitle,
-          germanSummary,
-          germanContent,
-          JSON.stringify(rawPayload),
-        ],
-      );
-    }
+          [
+            newsKey,
+            sourceName,
+            articleUrl,
+            imageUrl,
+            publishedAt,
+            englishTitle,
+            englishSummary,
+            englishContent,
+            germanTitle,
+            germanSummary,
+            germanContent,
+            JSON.stringify(rawPayload),
+          ],
+        );
+      }
 
-    console.log("[NewsIngest][ImageGen] Stats:", imageStats);
-    console.log(`[NewsIngest] Upserted ${articles.length} articles.`);
+      console.log("[NewsIngest][ImageGen] Stats:", imageStats);
+      console.log(`[NewsIngest] Upserted ${articles.length} articles.`);
+    });
   } catch (error) {
     const status = error?.response?.status;
     const providerMessage =
@@ -847,11 +928,20 @@ const ingestNews = async () => {
       error?.response?.data?.error ||
       error?.response?.data ||
       "";
+    const rateHeaders = {
+      retryAfter: error?.response?.headers?.["retry-after"],
+      xRateLimitRemaining: error?.response?.headers?.["x-ratelimit-remaining"],
+      xRateLimitReset: error?.response?.headers?.["x-ratelimit-reset"],
+    };
 
     console.error(
       `[NewsIngest] Ingest failed${status ? ` (${status})` : ""}:`,
       providerMessage || error.message,
     );
+
+    if (status === 429) {
+      console.error("[NewsIngest] Rate limit headers:", rateHeaders);
+    }
   }
 };
 

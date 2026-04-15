@@ -2,20 +2,39 @@ const { Pool } = require("pg");
 const db_config = require("../config/configuration");
 const queries = require("../model/schema");
 
+const poolOptions = db_config.db_config.pool || {};
+
 const pool = new Pool({
   connectionString: db_config.db_config.connection_string,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-  max: 10,
-  min: 0,
-  idleTimeoutMillis: 20000,
-  connectionTimeoutMillis: 10000,
-  allowExitOnIdle: true,
+  ssl: db_config.db_config.ssl,
+  max: poolOptions.max,
+  min: poolOptions.min,
+  idleTimeoutMillis: poolOptions.idleTimeoutMillis,
+  connectionTimeoutMillis: poolOptions.connectionTimeoutMillis,
+  allowExitOnIdle: poolOptions.allowExitOnIdle,
+  keepAlive: poolOptions.keepAlive,
+  keepAliveInitialDelayMillis: poolOptions.keepAliveInitialDelayMillis,
+  maxUses: poolOptions.maxUses,
 });
 
 pool.on("error", (err, client) => {
   console.error("Unexpected error on idle client", err);
+});
+
+pool.on("connect", () => {
+  console.log("[DB] New client connected");
+});
+
+pool.on("acquire", () => {
+  if (pool.waitingCount > 0) {
+    console.warn(
+      `[DB] Pool pressure: waiting=${pool.waitingCount} total=${pool.totalCount} idle=${pool.idleCount}`,
+    );
+  }
+});
+
+pool.on("remove", () => {
+  console.log("[DB] Client removed from pool");
 });
 
 pool
@@ -85,6 +104,7 @@ async function initDb(pool) {
     console.log("Tables created or already exist!");
   } catch (err) {
     console.error(`Error occurred while creating tables: ${err}`);
+    throw err;
   }
 }
 

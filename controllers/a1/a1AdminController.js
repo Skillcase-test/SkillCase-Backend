@@ -575,36 +575,44 @@ async function uploadFlashcard(req, res) {
     const usedUploadNames = new Set();
     const cardsToInsert = [];
 
-    for (let i = 0; i < cards.length; i++) {
-      const card = cards[i] || {};
+    const uploadTasks = cards.map((card, i) => async () => {
       const imageName = (card.image_name || "").trim();
       const imageNameKey = normalizeFileName(imageName);
 
       let frontImageUrl = card.front_image_url || null;
       let frontImagePublicId = null;
+      let isResolved = false;
+      let isMissing = false;
 
       if (imageName) {
         const matchingFile = imageByName.get(imageNameKey);
         if (matchingFile) {
           usedUploadNames.add(imageNameKey);
-          const uploaded = await new Promise((resolve, reject) => {
-            cloudinary.uploader
-              .upload_stream({ folder: "a1-flashcard" }, (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
-              })
-              .end(matchingFile.buffer);
-          });
-          frontImageUrl = uploaded.secure_url;
-          frontImagePublicId = uploaded.public_id;
-          imagesResolved.push(imageName);
+          try {
+             // wrap Cloudinary upload in promise
+             const uploaded = await new Promise((resolve, reject) => {
+              cloudinary.uploader
+                .upload_stream({ folder: "a1-flashcard" }, (error, result) => {
+                  if (error) reject(error);
+                  else resolve(result);
+                })
+                .end(matchingFile.buffer);
+            });
+            frontImageUrl = uploaded.secure_url;
+            frontImagePublicId = uploaded.public_id;
+            isResolved = true;
+          } catch(err) {
+            console.error("Cloudinary upload failed for", imageNameKey, err);
+            isMissing = true;
+            frontImageUrl = null;
+          }
         } else {
-          imagesMissing.push(imageName);
+          isMissing = true;
           frontImageUrl = null;
         }
       }
 
-      cardsToInsert.push({
+      return {
         word_de: card.word || card.front_de || "",
         meaning_en: card.meaning || card.front_meaning || "",
         sample_sentence_de: card.sample_sentence || card.back_de || "",
@@ -612,7 +620,20 @@ async function uploadFlashcard(req, res) {
         front_image_public_id: frontImagePublicId,
         image_name: imageName || null,
         card_index: i,
-      });
+        _meta: { imageName, isResolved, isMissing }
+      };
+    });
+
+    const CONCURRENCY_LIMIT = 5;
+    for (let i = 0; i < uploadTasks.length; i += CONCURRENCY_LIMIT) {
+      const chunk = uploadTasks.slice(i, i + CONCURRENCY_LIMIT);
+      const results = await Promise.all(chunk.map((fn) => fn()));
+      for (const res of results) {
+        if (res._meta.isResolved) imagesResolved.push(res._meta.imageName);
+        if (res._meta.isMissing) imagesMissing.push(res._meta.imageName);
+        delete res._meta;
+        cardsToInsert.push(res);
+      }
     }
 
     const client = await pool.connect();
