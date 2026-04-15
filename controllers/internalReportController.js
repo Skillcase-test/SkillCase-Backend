@@ -1,4 +1,10 @@
 const { pool } = require("../util/db");
+const {
+  getBatchStatusMap,
+  applyBatchStatus,
+  filterByStatus,
+} = require("../util/wiseBatchStatus");
+const { buildWiseLeaderboardData } = require("./wiseController");
 
 function getYesterdayIST() {
   const now = new Date();
@@ -242,6 +248,10 @@ async function getOpsReport(req, res) {
     const wiseData = {
       classesYesterday: [],
       consecutivelyAbsent: [],
+      leaderboard: {
+        most: { metrics: { interactive: [], improved: [], attendance: [] } },
+        least: { metrics: { interactive: [], improved: [], attendance: [] } },
+      },
     };
 
     if (process.env.WISE_API_KEY && process.env.WISE_INSTITUTE_ID) {
@@ -279,9 +289,22 @@ async function getOpsReport(req, res) {
         else if (Array.isArray(bBody?.classes)) classes = bBody.classes;
         else if (Array.isArray(bBody?.docs)) classes = bBody.docs;
 
+        const mappedClasses = classes.map((cls) => ({
+          id: String(cls._id || cls.id),
+          raw: cls,
+        }));
+        const statusMap = await getBatchStatusMap(mappedClasses.map((c) => c.id));
+        const activeClasses = filterByStatus(
+          applyBatchStatus(
+            mappedClasses.map((c) => ({ ...c.raw, id: c.id })),
+            statusMap,
+          ),
+          "active",
+        );
+
         const batchSize = 3;
-        for (let i = 0; i < classes.length; i += batchSize) {
-          const batch = classes.slice(i, i + batchSize);
+        for (let i = 0; i < activeClasses.length; i += batchSize) {
+          const batch = activeClasses.slice(i, i + batchSize);
           await Promise.all(
             batch.map(async (cls) => {
               const classId = cls._id || cls.id;
@@ -400,7 +423,7 @@ async function getOpsReport(req, res) {
                   consecutiveMisses++;
                 }
 
-                if (consecutiveMisses >= 3) {
+                if (consecutiveMisses >= 2) {
                   wiseData.consecutivelyAbsent.push({
                     studentName: sName,
                     className,
@@ -413,6 +436,39 @@ async function getOpsReport(req, res) {
         }
       } catch (err) {
         console.error("[OpsReport] Error fetching Wise data:", err.message);
+      }
+
+      try {
+        const now = new Date();
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const istNow = new Date(now.getTime() + istOffset);
+        const startOfMonth = new Date(istNow.getFullYear(), istNow.getMonth(), 1);
+        const leaderboardStartDate = startOfMonth.toISOString().split("T")[0];
+        const leaderboardEndDate = yesterday;
+
+        const [most, least] = await Promise.all([
+          buildWiseLeaderboardData({
+            startDate: leaderboardStartDate,
+            endDate: leaderboardEndDate,
+            mode: "most",
+          }),
+          buildWiseLeaderboardData({
+            startDate: leaderboardStartDate,
+            endDate: leaderboardEndDate,
+            mode: "least",
+          }),
+        ]);
+
+        wiseData.leaderboard = {
+          period: {
+            startDate: leaderboardStartDate,
+            endDate: leaderboardEndDate,
+          },
+          most,
+          least,
+        };
+      } catch (err) {
+        console.error("[OpsReport] Error fetching Wise leaderboard data:", err.message);
       }
     }
 

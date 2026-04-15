@@ -1,7 +1,9 @@
 const express = require("express");
 const {
   getBatches,
+  updateBatchStatus,
   getDashboardData,
+  getLeaderboard,
   handleWiseWebhook,
 } = require("../controllers/wiseController");
 
@@ -49,6 +51,8 @@ router.post("/webhook", verifyWiseWebhook, handleWiseWebhook);
 // Protected routes — called by our dashboard
 router.use(verifyWiseAccessCode);
 router.get("/batches", getBatches);
+router.patch("/batches/:batchId/status", updateBatchStatus);
 router.get("/dashboard-data", getDashboardData);
+router.get("/leaderboard", getLeaderboard);
 
 module.exports = router;

@@ -1092,6 +1092,15 @@ CREATE INDEX IF NOT EXISTS idx_wise_transcripts_class ON wise_transcripts(class_
 CREATE INDEX IF NOT EXISTS idx_wise_transcripts_date ON wise_transcripts(session_date);
 `;
 
+const createWiseBatchStatus = `
+CREATE TABLE IF NOT EXISTS wise_batch_status (
+  batch_id VARCHAR(50) PRIMARY KEY,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_wise_batch_status_active ON wise_batch_status(is_active);
+`;
+
 const createA1Tables = `
 
 -- A1 USER MIGRATION STATE
@@ -1373,5 +1382,6 @@ module.exports = {
   createNewsTables,
   createInterviewToolTables,
   createWiseTranscripts,
+  createWiseBatchStatus,
   createA1Tables,
 };

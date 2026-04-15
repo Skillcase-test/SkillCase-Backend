@@ -97,6 +97,7 @@ async function initDb(pool) {
 
     // Wise
     await pool.query(queries.createWiseTranscripts);
+    await pool.query(queries.createWiseBatchStatus);
 
     // A1 revamp
     await pool.query(queries.createA1Tables);
