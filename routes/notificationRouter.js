@@ -5,11 +5,27 @@ const {
   broadcastNotification,
   getAvailableVersions,
 } = require("../controllers/notificationController");
+const {
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 const router = express.Router();
 
-router.post("/send", sendNotification);
-router.post("/broadcast", broadcastNotification);
-router.get("/versions", getAvailableVersions);
+router.post(
+  "/send",
+  requireAdminPermission(ADMIN_MODULES.NOTIFICATIONS, ADMIN_ACTIONS.CREATE),
+  sendNotification,
+);
+router.post(
+  "/broadcast",
+  requireAdminPermission(ADMIN_MODULES.NOTIFICATIONS, ADMIN_ACTIONS.CREATE),
+  broadcastNotification,
+);
+router.get(
+  "/versions",
+  requireAdminPermission(ADMIN_MODULES.NOTIFICATIONS, ADMIN_ACTIONS.VIEW),
+  getAvailableVersions,
+);
 
 module.exports = router;

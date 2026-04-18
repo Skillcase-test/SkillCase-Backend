@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const adminController = require("../controllers/hardcoreTestAdminController");
+const {
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 // Multer config — accepts audio AND image files for exam questions
 const upload = multer({
@@ -40,54 +44,109 @@ const questionUploadFields = upload.fields([
 ]);
 
 // Exam CRUD
-router.post("/create", adminController.createExam);
-router.get("/list", adminController.listExams);
-router.get("/:testId", adminController.getExamDetail);
-router.put("/:testId", adminController.updateExam);
-router.delete("/:testId", adminController.deleteExam);
+router.post(
+  "/create",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.CREATE),
+  adminController.createExam,
+);
+router.get(
+  "/list",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.VIEW),
+  adminController.listExams,
+);
+router.get(
+  "/:testId",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.VIEW),
+  adminController.getExamDetail,
+);
+router.put(
+  "/:testId",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
+  adminController.updateExam,
+);
+router.delete(
+  "/:testId",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.DELETE),
+  adminController.deleteExam,
+);
 
 // Questions (with optional audio upload)
 router.post(
   "/:testId/question",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.CREATE),
   questionUploadFields,
   adminController.addQuestion,
 );
 router.put(
   "/:testId/question/:questionId",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
   questionUploadFields,
   adminController.editQuestion,
 );
-router.delete("/:testId/question/:questionId", adminController.deleteQuestion);
-router.put("/:testId/reorder", adminController.reorderQuestions);
+router.delete(
+  "/:testId/question/:questionId",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.DELETE),
+  adminController.deleteQuestion,
+);
+router.put(
+  "/:testId/reorder",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
+  adminController.reorderQuestions,
+);
 
 // Visibility
-router.post("/:testId/visibility", adminController.setVisibility);
-router.get("/:testId/visibility", adminController.getVisibility);
-router.delete("/:testId/visibility/:visId", adminController.removeVisibility);
+router.post(
+  "/:testId/visibility",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
+  adminController.setVisibility,
+);
+router.get(
+  "/:testId/visibility",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.VIEW),
+  adminController.getVisibility,
+);
+router.delete(
+  "/:testId/visibility/:visId",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.DELETE),
+  adminController.removeVisibility,
+);
 
 // Submissions
-router.get("/:testId/submissions", adminController.getSubmissions);
+router.get(
+  "/:testId/submissions",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.VIEW),
+  adminController.getSubmissions,
+);
 router.put(
   "/submission/:submissionId/reopen",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
   adminController.reopenSubmission,
 );
 router.put(
   "/submission/:submissionId/reset-reopen",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
   adminController.resetSubmissionForRetest,
 );
 router.get(
   "/submission/:submissionId/detail",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.VIEW),
   adminController.getSubmissionDetail,
 );
 router.put(
   "/submission/:submissionId/answer/:questionId/override",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
   adminController.overrideAnswer,
 );
 router.put(
   "/submission/:submissionId/answer/:questionId/override-points",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.EDIT),
   adminController.overrideAnswerPoints,
 );
 
-router.get("/:testId/export/excel", adminController.exportSubmissionsExcel);
+router.get(
+  "/:testId/export/excel",
+  requireAdminPermission(ADMIN_MODULES.EXAM, ADMIN_ACTIONS.VIEW),
+  adminController.exportSubmissionsExcel,
+);
 
 module.exports = router;

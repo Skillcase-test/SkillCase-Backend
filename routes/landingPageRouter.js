@@ -9,8 +9,13 @@ const {
 } = require("../controllers/landingPageController");
 const {
   authMiddleware,
-  authorizeRole,
 } = require("../middlewares/auth_middleware");
+const {
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 const router = express.Router();
 
@@ -30,25 +35,33 @@ router.get("/sections/:level", authMiddleware, getSectionsByLevel);
 router.put(
   "/demo-class/:level",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  requireAdminPermission(ADMIN_MODULES.LANDING_PAGE, ADMIN_ACTIONS.EDIT),
   updateDemoClass,
 );
 router.put(
   "/salary-info/:level",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  requireAdminPermission(ADMIN_MODULES.LANDING_PAGE, ADMIN_ACTIONS.EDIT),
   updateSalaryInfo,
 );
 router.put(
   "/talk-to-team/:level",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  requireAdminPermission(ADMIN_MODULES.LANDING_PAGE, ADMIN_ACTIONS.EDIT),
   updateTalkToTeam,
 );
 router.post(
   "/upload/:section/:level",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  requireAdminPermission(ADMIN_MODULES.LANDING_PAGE, ADMIN_ACTIONS.EDIT),
   upload.single("image"),
   uploadSectionImage,
 );

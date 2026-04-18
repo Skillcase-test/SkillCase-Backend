@@ -3,6 +3,13 @@ const router = express.Router();
 const multer = require("multer");
 
 const a2Admin = require("../../controllers/a2/a2AdminController");
+const {
+  requireAdminPermission,
+} = require("../../middlewares/admin_permission_middleware");
+const {
+  ADMIN_MODULES,
+  ADMIN_ACTIONS,
+} = require("../../constants/adminPermissions");
 // Configure multer for file uploads
 
 const upload = multer({
@@ -21,6 +28,9 @@ const upload = multer({
     }
   },
 });
+router.use(
+  requireAdminPermission(ADMIN_MODULES.A2_CONTENT, ADMIN_ACTIONS.MANAGE),
+);
 
 // Upload routes - JSON files + optional media
 router.post(

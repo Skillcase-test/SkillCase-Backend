@@ -58,7 +58,7 @@ async function getContent(req, res) {
   try {
     const contentResult = await pool.query(
       `
-      SELECT id, title, content_type, content, hero_image_url, vocabulary, questions, order_index
+      SELECT id, title, content_type, content, context, hero_image_url, vocabulary, questions, order_index
       FROM a1_reading_content
       WHERE chapter_id = $1
       ORDER BY order_index ASC

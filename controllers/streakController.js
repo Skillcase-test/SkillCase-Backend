@@ -16,12 +16,27 @@ function getYesterdayIST() {
   return istTime.toISOString().split("T")[0];
 }
 
+async function ensureUserExists(userId) {
+  const result = await pool.query(
+    `SELECT 1 FROM app_user WHERE user_id = $1 LIMIT 1`,
+    [userId],
+  );
+  return result.rows.length > 0;
+}
+
 // Get global top-5 leaderboard by current streak with the authenticated user's rank
 async function getTopStreakLeaderboard(req, res) {
   try {
     const userId = req.user?.user_id;
     if (!userId) {
       return res.status(400).json({ msg: "User not authenticated" });
+    }
+
+    const userExists = await ensureUserExists(userId);
+    if (!userExists) {
+      return res
+        .status(401)
+        .json({ msg: "User not found. Please log in again." });
     }
 
     const today = getTodayIST();
@@ -68,7 +83,8 @@ async function getTopStreakLeaderboard(req, res) {
       [today, userId],
     );
 
-    const isPhoneNumber = (str) => typeof str === 'string' && /^\+?[\d\s-]{10,}$/.test(str.trim());
+    const isPhoneNumber = (str) =>
+      typeof str === "string" && /^\+?[\d\s-]{10,}$/.test(str.trim());
 
     const normalizeRow = (row) => ({
       rank: Number(row.rank),
@@ -104,6 +120,14 @@ async function getStreakData(req, res) {
     if (!userId) {
       return res.status(400).json({ msg: "User not authenticated" });
     }
+
+    const userExists = await ensureUserExists(userId);
+    if (!userExists) {
+      return res
+        .status(401)
+        .json({ msg: "User not found. Please log in again." });
+    }
+
     const today = getTodayIST();
     const yesterday = getYesterdayIST();
 
@@ -169,6 +193,13 @@ async function logStreakPoints(req, res) {
     const userId = req.user?.user_id;
     if (!userId) {
       return res.status(400).json({ msg: "User not authenticated" });
+    }
+
+    const userExists = await ensureUserExists(userId);
+    if (!userExists) {
+      return res
+        .status(401)
+        .json({ msg: "User not found. Please log in again." });
     }
 
     // Accept points from body, default to 1 for backward compatibility
@@ -276,6 +307,13 @@ async function getLastChapterProgress(req, res) {
 
     if (!userId) {
       return res.status(400).json({ msg: "User not authenticated" });
+    }
+
+    const userExists = await ensureUserExists(userId);
+    if (!userExists) {
+      return res
+        .status(401)
+        .json({ msg: "User not found. Please log in again." });
     }
 
     // Get user's proficiency level
@@ -437,6 +475,14 @@ async function saveFlippedCard(req, res) {
     if (!userId || set_id === undefined || card_index === undefined) {
       return res.status(400).json({ msg: "Missing required fields" });
     }
+
+    const userExists = await ensureUserExists(userId);
+    if (!userExists) {
+      return res
+        .status(401)
+        .json({ msg: "User not found. Please log in again." });
+    }
+
     // Save the flipped card record
     const result = await pool.query(
       `INSERT INTO user_flipped_cards (user_id, set_id, card_index)

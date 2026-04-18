@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS agreement (
   name VARCHAR(255) NOT NULL,
   phone_number VARCHAR(20) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
+  user_id VARCHAR(50),
   agree BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -458,17 +459,53 @@ ALTER TABLE app_user
   ADD COLUMN IF NOT EXISTS app_version VARCHAR(20),
   ADD COLUMN IF NOT EXISTS signup_source VARCHAR(10) DEFAULT 'web',
   ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS terms_required BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS terms_accepted BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS terms_version VARCHAR(20),
   ADD COLUMN IF NOT EXISTS news_hint_seen BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS main_site_id INTEGER DEFAULT NULL;
+
+  ALTER TABLE agreement
+  ADD COLUMN IF NOT EXISTS user_id VARCHAR(50);
 
   UPDATE app_user SET phone = number WHERE phone IS NULL AND number IS NOT NULL;
   UPDATE app_user SET fullname = username WHERE fullname IS NULL;
   UPDATE app_user SET status = 1 WHERE status IS NULL OR status = 0;
   UPDATE app_user SET signup_source = 'app' WHERE fcm_token IS NOT NULL AND signup_source IS NULL;
   UPDATE app_user SET signup_source = 'web' WHERE signup_source IS NULL;
+  UPDATE app_user SET terms_required = TRUE WHERE is_paid = TRUE;
+
+  UPDATE agreement a
+  SET user_id = u.user_id,
+      modified_at = CURRENT_TIMESTAMP
+  FROM app_user u
+  WHERE a.user_id IS NULL
+    AND (
+      (u.email IS NOT NULL AND u.email <> '' AND LOWER(u.email) = LOWER(a.email))
+      OR (COALESCE(u.phone, u.number) IS NOT NULL AND COALESCE(u.phone, u.number) = a.phone_number)
+    );
+
+  UPDATE app_user u
+  SET terms_accepted = TRUE,
+      terms_accepted_at = COALESCE(u.terms_accepted_at, a.created_at),
+      terms_version = COALESCE(u.terms_version, 'v1')
+  FROM agreement a
+  WHERE a.agree = TRUE
+    AND (
+      (u.user_id IS NOT NULL AND a.user_id = u.user_id)
+      OR (u.email IS NOT NULL AND u.email <> '' AND LOWER(u.email) = LOWER(a.email))
+      OR (COALESCE(u.phone, u.number) IS NOT NULL AND COALESCE(u.phone, u.number) = a.phone_number)
+    );
   
   CREATE INDEX IF NOT EXISTS idx_app_user_last_activity 
   ON app_user(last_activity_at);
+
+  CREATE INDEX IF NOT EXISTS idx_app_user_terms_state
+  ON app_user(is_paid, terms_required, terms_accepted);
+
+  CREATE INDEX IF NOT EXISTS idx_agreement_user_id
+  ON agreement(user_id);
 `;
 
 // OTP table
@@ -1076,6 +1113,10 @@ CREATE TABLE IF NOT EXISTS interview_submission_answer (
 );
 
 CREATE INDEX IF NOT EXISTS idx_interview_answer_submission ON interview_submission_answer(submission_id, answer_order);
+
+ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS intro_video_duration_seconds NUMERIC(10,2);
+ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS farewell_video_duration_seconds NUMERIC(10,2);
+ALTER TABLE interview_position_question ADD COLUMN IF NOT EXISTS video_duration_seconds NUMERIC(10,2);
 `;
 
 const createWiseTranscripts = `
@@ -1277,6 +1318,7 @@ CREATE TABLE IF NOT EXISTS a1_reading_content (
   title VARCHAR(255) NOT NULL,
   content_type VARCHAR(50) NOT NULL,
   content TEXT NOT NULL,
+  context TEXT,
   hero_image_url TEXT,
   vocabulary JSONB,
   questions JSONB NOT NULL,
@@ -1332,9 +1374,43 @@ CREATE TABLE IF NOT EXISTS a1_test_progress (
 
 
 -- Alter table for dropdown question type and deterministic quiz
+ALTER TABLE a1_reading_content
+ADD COLUMN IF NOT EXISTS context TEXT;
+
 ALTER TABLE a1_flashcard_progress
 ADD COLUMN IF NOT EXISTS mini_quiz_snapshot JSONB,
 ADD COLUMN IF NOT EXISTS final_quiz_snapshot JSONB;
+`;
+
+const createAdminRBAC = `
+CREATE TABLE IF NOT EXISTS admin_user_permission (
+  permission_id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+  module_key VARCHAR(80) NOT NULL,
+  action_key VARCHAR(40) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, module_key, action_key)
+);
+CREATE INDEX IF NOT EXISTS idx_admin_user_permission_user ON admin_user_permission(user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_user_permission_module ON admin_user_permission(module_key, action_key);
+
+CREATE TABLE IF NOT EXISTS admin_wise_scope (
+  user_id VARCHAR(50) PRIMARY KEY REFERENCES app_user(user_id) ON DELETE CASCADE,
+  has_full_access BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_wise_batch_access (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+  batch_id VARCHAR(50) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, batch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_admin_wise_batch_access_user ON admin_wise_batch_access(user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_wise_batch_access_batch ON admin_wise_batch_access(batch_id);
 `;
 
 module.exports = {
@@ -1384,4 +1460,5 @@ module.exports = {
   createWiseTranscripts,
   createWiseBatchStatus,
   createA1Tables,
+  createAdminRBAC,
 };

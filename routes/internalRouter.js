@@ -1,17 +1,21 @@
 const express = require("express");
 const { getDailyReport, getOpsReport } = require("../controllers/internalReportController");
+const {
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 const router = express.Router();
 
-function internalApiKeyMiddleware(req, res, next) {
-  const apiKey = req.headers["x-internal-api-key"];
-  if (!apiKey || apiKey !== process.env.INTERNAL_API_KEY) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  next();
-}
-
-router.get("/daily-report", internalApiKeyMiddleware, getDailyReport);
-router.get("/ops-report", internalApiKeyMiddleware, getOpsReport);
+router.get(
+  "/daily-report",
+  requireAdminPermission(ADMIN_MODULES.INTERNAL, ADMIN_ACTIONS.VIEW),
+  getDailyReport,
+);
+router.get(
+  "/ops-report",
+  requireAdminPermission(ADMIN_MODULES.INTERNAL, ADMIN_ACTIONS.VIEW),
+  getOpsReport,
+);
 
 module.exports = router;

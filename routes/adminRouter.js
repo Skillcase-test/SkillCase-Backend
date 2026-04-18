@@ -59,10 +59,52 @@ const {
 } = require("../controllers/storyController");
 
 const { uploadNotificationImage } = require("../controllers/uploadController");
+const {
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+router.use(
+  "/analytics",
+  requireAdminPermission(ADMIN_MODULES.ANALYTICS, ADMIN_ACTIONS.VIEW),
+);
+router.use(
+  "/stories",
+  requireAdminPermission(ADMIN_MODULES.STORIES, ADMIN_ACTIONS.MANAGE),
+);
+router.use(
+  "/agreements",
+  requireAdminPermission(ADMIN_MODULES.AGREEMENTS, ADMIN_ACTIONS.VIEW),
+);
+router.use(
+  "/upload/notification-image",
+  requireAdminPermission(ADMIN_MODULES.NOTIFICATIONS, ADMIN_ACTIONS.EDIT),
+);
+router.use(
+  [
+    "/addFlashCardSet",
+    "/check",
+    "/addChTest",
+    "/addFinalTest",
+    "/addInterview",
+    "/deleteFlashSet",
+    "/getChapters/:prof_level",
+    "/addPronounceCardSet",
+    "/deletePronounceSet",
+    "/checkPronounce",
+    "/getPronounceChapters/:prof_level",
+    "/getTest/:prof_level",
+    "/deleteChTest",
+    "/deleteFinalTest",
+    "/getInterview/:prof_level",
+    "/deleteInterview",
+  ],
+  requireAdminPermission(ADMIN_MODULES.CONTENT, ADMIN_ACTIONS.MANAGE),
+);
 
 router.post("/addFlashCardSet", upload.single("file"), addFlashSet);
 router.post("/check", checkSetName);

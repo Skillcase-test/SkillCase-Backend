@@ -2,8 +2,16 @@ const express = require("express");
 const multer = require("multer");
 
 const a1Admin = require("../../controllers/a1/a1AdminController");
+const {
+  requireAdminPermission,
+} = require("../../middlewares/admin_permission_middleware");
+const {
+  ADMIN_MODULES,
+  ADMIN_ACTIONS,
+} = require("../../constants/adminPermissions");
 
 const router = express.Router();
+router.use(requireAdminPermission(ADMIN_MODULES.CONTENT, ADMIN_ACTIONS.MANAGE));
 
 const upload = multer({
   storage: multer.memoryStorage(),

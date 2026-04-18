@@ -32,6 +32,7 @@ const authRouter = require("./routes/authRouter");
 
 const eventRouter = require("./routes/eventRouter");
 const eventAdminRouter = require("./routes/eventAdminRouter");
+const adminAccessRouter = require("./routes/adminAccessRouter");
 
 const a2Router = require("./routes/a2/a2Router");
 const a2AdminRouter = require("./routes/a2/a2AdminRouter");
@@ -75,9 +76,15 @@ const internalRouter = require("./routes/internalRouter");
 
 const {
   authMiddleware,
-  authorizeRole,
   optionalAuth,
 } = require("./middlewares/auth_middleware");
+const {
+  hydrateAdminAccess,
+  authorizeAdminOrSuperAdmin,
+} = require("./middlewares/admin_permission_middleware");
+const {
+  requirePaidTermsAcceptance,
+} = require("./middlewares/terms_acceptance_middleware");
 
 const { initializeGemini } = require("./config/gemini");
 const { RUN_SCHEDULED_JOBS } = require("./config/configuration");
@@ -122,13 +129,7 @@ app.use(
   cors({
     origin: allowed_origins,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-access-code",
-      "x-internal-api-key",
-      "x-wise-access-code",
-    ],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
 );
@@ -161,49 +162,103 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
-app.use("/api/admin/events", eventAdminRouter);
-app.use("/api/admin", authMiddleware, authorizeRole("admin"), adminRouter);
-app.use("/api/pronounce", authMiddleware, pronounceRouter);
+app.use(
+  "/api/admin/access",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  adminAccessRouter,
+);
+app.use(
+  "/api/admin/events",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  eventAdminRouter,
+);
+app.use(
+  "/api/admin",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  adminRouter,
+);
+app.use(
+  "/api/pronounce",
+  authMiddleware,
+  requirePaidTermsAcceptance,
+  pronounceRouter,
+);
 app.use("/api/practice", optionalAuth, practiceRouter);
 app.use("/api/user", userRouter);
 app.use("/api/test", testRouter);
 app.use("/api/interview", interviewRouter);
 app.use("/api/agreement", agreementRouter);
-app.use("/api/stories", authMiddleware, storyRouter);
-app.use("/api/tts", authMiddleware, ttsRouter);
+app.use(
+  "/api/stories",
+  authMiddleware,
+  requirePaidTermsAcceptance,
+  storyRouter,
+);
+app.use("/api/tts", authMiddleware, requirePaidTermsAcceptance, ttsRouter);
 // app.use("/api/resume", authMiddleware, resumeRouter);
 // app.use("/api/pdf", pdfRoutes);
 app.use("/api/upload", uploadRouter);
 
-app.use("/api/conversation", authMiddleware, conversationRouter);
+app.use(
+  "/api/conversation",
+  authMiddleware,
+  requirePaidTermsAcceptance,
+  conversationRouter,
+);
 app.use(
   "/api/admin/conversation",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
   conversationAdminRouter,
 );
 
-app.use("/api/a2", authMiddleware, a2Router);
-app.use("/api/admin/a2", authMiddleware, authorizeRole("admin"), a2AdminRouter);
+app.use("/api/a2", authMiddleware, requirePaidTermsAcceptance, a2Router);
+app.use(
+  "/api/admin/a2",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  a2AdminRouter,
+);
 
 // A1 revamp
-app.use("/api/a1", authMiddleware, a1Router);
-app.use("/api/admin/a1", authMiddleware, authorizeRole("admin"), a1AdminRouter);
-app.use("/api/a1-migration", authMiddleware, a1MigrationRouter);
+app.use("/api/a1", authMiddleware, requirePaidTermsAcceptance, a1Router);
+app.use(
+  "/api/admin/a1",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  a1AdminRouter,
+);
+app.use(
+  "/api/a1-migration",
+  authMiddleware,
+  requirePaidTermsAcceptance,
+  a1MigrationRouter,
+);
 
 // Hardcore Test Module
 app.use("/api/exam-audio", examAudioRouter);
-app.use("/api/exam", authMiddleware, examRouter);
+app.use("/api/exam", authMiddleware, requirePaidTermsAcceptance, examRouter);
 app.use(
   "/api/admin/exam",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
   examAdminRouter,
 );
 app.use(
   "/api/admin/batch",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
   batchRouter,
 );
 
@@ -239,7 +294,8 @@ app.use("/api/api/updates", updateRouter);
 app.use(
   "/api/notifications",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
   notificationRouter,
 );
 
@@ -254,9 +310,15 @@ app.use("/api/landing-page", landingPageRouter);
 app.use("/api/admin/landing-page", landingPageRouter);
 
 // News Module
-app.use("/api/news", authMiddleware, newsRouter);
+app.use("/api/news", authMiddleware, requirePaidTermsAcceptance, newsRouter);
 
-app.use("/api/internal", internalRouter);
+app.use(
+  "/api/internal",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  internalRouter,
+);
 
 // Sync
 app.use("/api/sync", syncRouter);
@@ -265,7 +327,8 @@ app.use("/api/sync", syncRouter);
 app.use(
   "/api/admin/interview-tools",
   authMiddleware,
-  authorizeRole("admin"),
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
   interviewToolAdminRouter,
 );
 

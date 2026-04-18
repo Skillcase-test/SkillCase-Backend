@@ -5,6 +5,10 @@ const {
   getAllConversations,
   deleteConversation,
 } = require("../controllers/conversationController");
+const {
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 const router = express.Router();
 
@@ -16,13 +20,22 @@ const upload = multer({
 
 router.post(
   "/create",
+  requireAdminPermission(ADMIN_MODULES.CONVERSATIONS, ADMIN_ACTIONS.CREATE),
   upload.fields([
     { name: "audio", maxCount: 1 },
     { name: "json", maxCount: 1 },
   ]),
   createConversation
 );
-router.get("/all", getAllConversations);
-router.delete("/:conversation_id", deleteConversation);
+router.get(
+  "/all",
+  requireAdminPermission(ADMIN_MODULES.CONVERSATIONS, ADMIN_ACTIONS.VIEW),
+  getAllConversations,
+);
+router.delete(
+  "/:conversation_id",
+  requireAdminPermission(ADMIN_MODULES.CONVERSATIONS, ADMIN_ACTIONS.DELETE),
+  deleteConversation,
+);
 
 module.exports = router;

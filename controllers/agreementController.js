@@ -108,6 +108,7 @@ const getAllAgreements = async (req, res) => {
     const query = `
       SELECT 
         agreement_id,
+        user_id,
         name,
         phone_number,
         email,
@@ -115,6 +116,7 @@ const getAllAgreements = async (req, res) => {
         created_at,
         modified_at
       FROM agreement
+      WHERE agree = TRUE
       ORDER BY created_at DESC
     `;
 

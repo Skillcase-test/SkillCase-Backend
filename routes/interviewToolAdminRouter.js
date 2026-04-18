@@ -12,21 +12,59 @@ const {
   reviewCandidateSubmission,
   deletePosition,
 } = require("../controllers/interviewToolAdminController");
+const {
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
-router.get("/positions", listPositions);
-router.get("/positions/:positionId", getPositionById);
-router.post("/upload-url", getUploadUrl);
-router.post("/positions", createPosition);
-router.put("/positions/:positionId", updatePosition);
-router.delete("/positions/:positionId", deletePosition);
-router.patch("/positions/:positionId/status", updatePositionStatus);
-router.get("/positions/:positionId/candidates", getCandidatesByPosition);
+router.get(
+  "/positions",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.VIEW),
+  listPositions,
+);
+router.get(
+  "/positions/:positionId",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.VIEW),
+  getPositionById,
+);
+router.post(
+  "/upload-url",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.EDIT),
+  getUploadUrl,
+);
+router.post(
+  "/positions",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.CREATE),
+  createPosition,
+);
+router.put(
+  "/positions/:positionId",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.EDIT),
+  updatePosition,
+);
+router.delete(
+  "/positions/:positionId",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.DELETE),
+  deletePosition,
+);
+router.patch(
+  "/positions/:positionId/status",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.EDIT),
+  updatePositionStatus,
+);
+router.get(
+  "/positions/:positionId/candidates",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.VIEW),
+  getCandidatesByPosition,
+);
 router.get(
   "/positions/:positionId/candidates/:submissionId",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.VIEW),
   getCandidateSubmissionDetail,
 );
 router.patch(
   "/positions/:positionId/candidates/:submissionId/review",
+  requireAdminPermission(ADMIN_MODULES.INTERVIEW_TOOLS, ADMIN_ACTIONS.EDIT),
   reviewCandidateSubmission,
 );
 

@@ -119,9 +119,9 @@ function getPreviousMonthRange() {
   };
 }
 
-function getLast7DaysRange() {
-  const end = new Date();
-  const start = new Date();
+function getLast7DaysRange(endDateStr) {
+  const end = endDateStr ? new Date(endDateStr) : new Date();
+  const start = endDateStr ? new Date(endDateStr) : new Date();
   start.setDate(start.getDate() - 6);
   return {
     startDate: start.toISOString().split("T")[0],
@@ -220,7 +220,8 @@ async function handleWiseWebhook(req, res) {
   res.status(200).json({ received: true });
 
   const { event, payload } = req.body || {};
-  if (event !== "SessionTranscriptGeneratedEvent" || !payload?.sessionId) return;
+  if (event !== "SessionTranscriptGeneratedEvent" || !payload?.sessionId)
+    return;
 
   const sessionId = payload.sessionId;
   const classId = payload.classId || null;
@@ -230,7 +231,9 @@ async function handleWiseWebhook(req, res) {
     const instId = process.env.WISE_INSTITUTE_ID;
     const ep = endpoints(instId);
 
-    const sessionRes = await wiseClient.get(ep.getAttendance(classId, sessionId));
+    const sessionRes = await wiseClient.get(
+      ep.getAttendance(classId, sessionId),
+    );
     const sessionData = sessionRes.data?.data;
     if (!sessionData) return;
 
@@ -242,7 +245,9 @@ async function handleWiseWebhook(req, res) {
     const vttUrl = vttUrlEntry?.file?.path || vttUrlEntry?.url || null;
 
     if (!vttUrl) {
-      console.log(`[Wise Webhook] No transcript URL yet for session ${sessionId}`);
+      console.log(
+        `[Wise Webhook] No transcript URL yet for session ${sessionId}`,
+      );
       return;
     }
 
@@ -258,11 +263,13 @@ async function handleWiseWebhook(req, res) {
     });
 
     const rawTranscript = vttRes.data;
-    if (typeof rawTranscript !== "string" || rawTranscript.trim() === "") return;
+    if (typeof rawTranscript !== "string" || rawTranscript.trim() === "")
+      return;
 
     const sessionDate =
-      (sessionData.scheduledStartTime || sessionData.start_time || "").split("T")[0] ||
-      null;
+      (sessionData.scheduledStartTime || sessionData.start_time || "").split(
+        "T",
+      )[0] || null;
 
     const speakerWords = parseVTTTranscript(rawTranscript);
     const { scores, instructor, totalStudentWords } =
@@ -286,7 +293,10 @@ async function handleWiseWebhook(req, res) {
       ],
     );
   } catch (err) {
-    console.error(`[Wise Webhook] Failed to process session ${sessionId}:`, err.message);
+    console.error(
+      `[Wise Webhook] Failed to process session ${sessionId}:`,
+      err.message,
+    );
   }
 }
 
@@ -299,7 +309,8 @@ function computeStudentScores(sessions, sessionDetails, students) {
       student.userId ||
       student.user_id ||
       String(Math.random());
-    const name = student.name || student.fullName || student.full_name || "Unknown";
+    const name =
+      student.name || student.fullName || student.full_name || "Unknown";
     studentMap[id] = {
       id,
       name,
@@ -327,7 +338,8 @@ function computeStudentScores(sessions, sessionDetails, students) {
       if (!attended) {
         data.absent++;
       } else if (hasTranscript) {
-        const wordsSpoken = matchInteractionScore(data.name, transcriptScores) ?? 0;
+        const wordsSpoken =
+          matchInteractionScore(data.name, transcriptScores) ?? 0;
         data.wordCount += wordsSpoken;
         data.transcriptSessionsAttended++;
       }
@@ -365,14 +377,18 @@ function computeStudentScores(sessions, sessionDetails, students) {
   return Object.values(studentMap).map((data) => {
     const attendancePct =
       data.totalClasses > 0
-        ? Math.round(((data.totalClasses - data.absent) / data.totalClasses) * 100)
+        ? Math.round(
+            ((data.totalClasses - data.absent) / data.totalClasses) * 100,
+          )
         : null;
     const absenceRate =
       data.totalClasses > 0 ? data.absent / data.totalClasses : 0;
     const attendanceScore = (1 - absenceRate) * 100;
 
     const hasInteraction = data.transcriptSessionsAttended > 0;
-    const avgInteraction = hasInteraction ? (interactionMap.get(data.id) ?? 0) : null;
+    const avgInteraction = hasInteraction
+      ? (interactionMap.get(data.id) ?? 0)
+      : null;
 
     const cumulatedScore =
       data.totalClasses === 0
@@ -473,12 +489,18 @@ function extractStudents(response) {
     if (!body) return [];
 
     let suspendedIds = new Set();
-    if (body.data?.suspendedStudents && Array.isArray(body.data.suspendedStudents)) {
+    if (
+      body.data?.suspendedStudents &&
+      Array.isArray(body.data.suspendedStudents)
+    ) {
       body.data.suspendedStudents.forEach((s) => {
         if (s.userId) suspendedIds.add(String(s.userId));
         if (s.id) suspendedIds.add(String(s.id));
       });
-    } else if (body.suspendedStudents && Array.isArray(body.suspendedStudents)) {
+    } else if (
+      body.suspendedStudents &&
+      Array.isArray(body.suspendedStudents)
+    ) {
       body.suspendedStudents.forEach((s) => {
         if (s.userId) suspendedIds.add(String(s.userId));
         if (s.id) suspendedIds.add(String(s.id));
@@ -488,7 +510,8 @@ function extractStudents(response) {
     let pList = [];
     if (Array.isArray(body)) pList = body;
     else if (Array.isArray(body.data)) pList = body.data;
-    else if (body.data && Array.isArray(body.data.students)) pList = body.data.students;
+    else if (body.data && Array.isArray(body.data.students))
+      pList = body.data.students;
     else if (body.data && Array.isArray(body.data.participants))
       pList = body.data.participants;
     else if (body.data && Array.isArray(body.data.joinedRequest))
@@ -498,8 +521,12 @@ function extractStudents(response) {
     else return [];
 
     return pList.filter((p) => {
-      const uid = String(p._id || p.id || p.userId || p.wiseUserId || "unknown");
-      return !suspendedIds.has(uid) && (p.status || "").toLowerCase() !== "suspended";
+      const uid = String(
+        p._id || p.id || p.userId || p.wiseUserId || "unknown",
+      );
+      return (
+        !suspendedIds.has(uid) && (p.status || "").toLowerCase() !== "suspended"
+      );
     });
   } catch {
     return [];
@@ -540,12 +567,16 @@ async function computeBatchDashboardCore(
     wiseClient.get(ep.getStudents(batchId)),
   ]);
 
-  const mainSessions = mainRes.status === "fulfilled" ? safeData(mainRes.value) : [];
-  const mtdSessions = mtdRes.status === "fulfilled" ? safeData(mtdRes.value) : [];
+  const mainSessions =
+    mainRes.status === "fulfilled" ? safeData(mainRes.value) : [];
+  const mtdSessions =
+    mtdRes.status === "fulfilled" ? safeData(mtdRes.value) : [];
   const last7Sessions =
     last7Res.status === "fulfilled" ? safeData(last7Res.value) : [];
   const students =
-    studentsRes.status === "fulfilled" ? extractStudents(studentsRes.value) : [];
+    studentsRes.status === "fulfilled"
+      ? extractStudents(studentsRes.value)
+      : [];
 
   const [mainDetails, mtdDetails, last7Details] = await Promise.all([
     fetchSessionDetails(wiseClient, mainSessions, batchId),
@@ -553,7 +584,11 @@ async function computeBatchDashboardCore(
     fetchSessionDetails(wiseClient, last7Sessions, batchId),
   ]);
 
-  const mainCandidates = computeStudentScores(mainSessions, mainDetails, students);
+  const mainCandidates = computeStudentScores(
+    mainSessions,
+    mainDetails,
+    students,
+  );
   const mtdCandidates = computeStudentScores(mtdSessions, mtdDetails, students);
 
   const mtdMap = new Map(
@@ -659,18 +694,37 @@ function makeMetricRow(candidate, batch, metricLabel, metricValue) {
   };
 }
 
+function applyWiseScopeToBatches(
+  batches = [],
+  adminAccess = null,
+  user = null,
+) {
+  if (user?.role === "super_admin") return batches;
+
+  const wiseScope = adminAccess?.wise || {};
+  if (wiseScope.has_full_access) return batches;
+
+  const allowed = new Set((wiseScope.batch_ids || []).map((id) => String(id)));
+  return batches.filter((batch) => allowed.has(String(batch.id)));
+}
+
 async function getBatches(req, res) {
   try {
     const wiseClient = createWiseClient();
     const statusFilter = String(req.query.status || "active").toLowerCase();
 
     const batchesWithStatus = await getAllBatchesWithStatus(wiseClient);
-    const filtered = filterByStatus(batchesWithStatus, statusFilter);
+    const scopedBatches = applyWiseScopeToBatches(
+      batchesWithStatus,
+      req.adminAccess,
+      req.user,
+    );
+    const filtered = filterByStatus(scopedBatches, statusFilter);
 
     res.json({
       batches: filtered,
-      totalActive: batchesWithStatus.filter((b) => b.isActive).length,
-      totalInactive: batchesWithStatus.filter((b) => !b.isActive).length,
+      totalActive: scopedBatches.filter((b) => b.isActive).length,
+      totalInactive: scopedBatches.filter((b) => !b.isActive).length,
       statusFilter,
     });
   } catch (err) {
@@ -715,26 +769,31 @@ async function getDashboardData(req, res) {
   try {
     const active = await isBatchActive(batchId);
     if (!active) {
-      return res
-        .status(403)
-        .json({ error: "This batch is inactive and excluded from Wise reports" });
+      return res.status(403).json({
+        error: "This batch is inactive and excluded from Wise reports",
+      });
     }
 
     const wiseClient = createWiseClient();
     const mtdRange = getPreviousMonthRange();
-    const last7Range = getLast7DaysRange();
+    const last7Range = getLast7DaysRange(endDate);
 
-    const { mainSessions, last7Details, candidates } = await computeBatchDashboardCore(
-      wiseClient,
-      String(batchId),
-      startDate,
-      endDate,
-      mtdRange,
-      last7Range,
-    );
+    const { mainSessions, last7Details, candidates } =
+      await computeBatchDashboardCore(
+        wiseClient,
+        String(batchId),
+        startDate,
+        endDate,
+        mtdRange,
+        last7Range,
+      );
 
     const overallHealth = getOverallHealth(candidates);
-    const attendanceGrid = buildAttendanceGrid(candidates, last7Details, last7Range);
+    const attendanceGrid = buildAttendanceGrid(
+      candidates,
+      last7Details,
+      last7Range,
+    );
 
     res.json({
       summary: {
@@ -748,37 +807,59 @@ async function getDashboardData(req, res) {
     });
   } catch (err) {
     console.error("[Wise] getDashboardData error:", err.message);
-    res.status(502).json({ error: "Failed to fetch dashboard data from Wise API" });
+    res
+      .status(502)
+      .json({ error: "Failed to fetch dashboard data from Wise API" });
   }
 }
 
 async function getLeaderboard(req, res) {
   const { startDate, endDate } = req.query;
-  const mode = String(req.query.mode || "most").toLowerCase() === "least" ? "least" : "most";
+  const mode =
+    String(req.query.mode || "most").toLowerCase() === "least"
+      ? "least"
+      : "most";
 
   if (!startDate || !endDate) {
-    return res.status(400).json({ error: "startDate and endDate are required" });
+    return res
+      .status(400)
+      .json({ error: "startDate and endDate are required" });
   }
 
   try {
-    const result = await buildWiseLeaderboardData({ startDate, endDate, mode });
+    const result = await buildWiseLeaderboardData({
+      startDate,
+      endDate,
+      mode,
+      adminAccess: req.adminAccess,
+      user: req.user,
+    });
     res.json(result);
   } catch (err) {
     console.error("[Wise] getLeaderboard error:", err.message);
-    res.status(502).json({ error: "Failed to fetch leaderboard data from Wise API" });
+    res
+      .status(502)
+      .json({ error: "Failed to fetch leaderboard data from Wise API" });
   }
 }
 
-async function buildWiseLeaderboardData({ startDate, endDate, mode = "most" }) {
+async function buildWiseLeaderboardData({
+  startDate,
+  endDate,
+  mode = "most",
+  adminAccess = null,
+  user = null,
+}) {
   const normalizedMode =
     String(mode || "most").toLowerCase() === "least" ? "least" : "most";
   const wiseClient = createWiseClient();
   const mtdRange = getPreviousMonthRange();
-  const last7Range = getLast7DaysRange();
+  const last7Range = getLast7DaysRange(endDate);
   const attendanceThreshold = 95;
 
   const allBatches = await getAllBatchesWithStatus(wiseClient);
-  const activeBatches = filterByStatus(allBatches, "active");
+  const scopedBatches = applyWiseScopeToBatches(allBatches, adminAccess, user);
+  const activeBatches = filterByStatus(scopedBatches, "active");
 
   const interactiveRows = [];
   const improvedRows = [];

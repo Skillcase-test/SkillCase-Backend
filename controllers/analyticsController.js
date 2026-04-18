@@ -688,13 +688,107 @@ async function updateUserFields(req, res) {
     if (is_paid !== undefined) {
       values.push(is_paid);
       setClauses.push(`is_paid = $${values.length}`);
+      setClauses.push(
+        `terms_required = CASE
+           WHEN is_paid = FALSE AND $${values.length} = TRUE THEN NOT EXISTS (
+             SELECT 1
+             FROM agreement a
+             WHERE a.agree = TRUE
+               AND (
+                 a.user_id = app_user.user_id
+                 OR (
+                   app_user.email IS NOT NULL
+                   AND app_user.email <> ''
+                   AND LOWER(a.email) = LOWER(app_user.email)
+                 )
+                 OR (
+                   COALESCE(app_user.phone, app_user.number) IS NOT NULL
+                   AND a.phone_number = COALESCE(app_user.phone, app_user.number)
+                 )
+               )
+           )
+           ELSE terms_required
+         END`,
+      );
+      setClauses.push(
+        `terms_accepted = CASE
+           WHEN is_paid = FALSE AND $${values.length} = TRUE THEN EXISTS (
+             SELECT 1
+             FROM agreement a
+             WHERE a.agree = TRUE
+               AND (
+                 a.user_id = app_user.user_id
+                 OR (
+                   app_user.email IS NOT NULL
+                   AND app_user.email <> ''
+                   AND LOWER(a.email) = LOWER(app_user.email)
+                 )
+                 OR (
+                   COALESCE(app_user.phone, app_user.number) IS NOT NULL
+                   AND a.phone_number = COALESCE(app_user.phone, app_user.number)
+                 )
+               )
+           )
+           ELSE terms_accepted
+         END`,
+      );
+      setClauses.push(
+        `terms_accepted_at = CASE
+           WHEN is_paid = FALSE AND $${values.length} = TRUE THEN CASE
+             WHEN EXISTS (
+               SELECT 1
+               FROM agreement a
+               WHERE a.agree = TRUE
+                 AND (
+                   a.user_id = app_user.user_id
+                   OR (
+                     app_user.email IS NOT NULL
+                     AND app_user.email <> ''
+                     AND LOWER(a.email) = LOWER(app_user.email)
+                   )
+                   OR (
+                     COALESCE(app_user.phone, app_user.number) IS NOT NULL
+                     AND a.phone_number = COALESCE(app_user.phone, app_user.number)
+                   )
+                 )
+             ) THEN COALESCE(terms_accepted_at, CURRENT_TIMESTAMP)
+             ELSE NULL
+           END
+           ELSE terms_accepted_at
+         END`,
+      );
+      setClauses.push(
+        `terms_version = CASE
+           WHEN is_paid = FALSE AND $${values.length} = TRUE THEN CASE
+             WHEN EXISTS (
+               SELECT 1
+               FROM agreement a
+               WHERE a.agree = TRUE
+                 AND (
+                   a.user_id = app_user.user_id
+                   OR (
+                     app_user.email IS NOT NULL
+                     AND app_user.email <> ''
+                     AND LOWER(a.email) = LOWER(app_user.email)
+                   )
+                   OR (
+                     COALESCE(app_user.phone, app_user.number) IS NOT NULL
+                     AND a.phone_number = COALESCE(app_user.phone, app_user.number)
+                   )
+                 )
+             ) THEN COALESCE(terms_version, 'v1')
+             ELSE NULL
+           END
+           ELSE terms_version
+         END`,
+      );
     }
 
     values.push(user_id);
 
     const result = await pool.query(
-      `UPDATE app_user SET ${setClauses.join(", ")} WHERE user_id = $${values.length} AND role = 'user' RETURNING user_id, current_profeciency_level, is_paid`,
-      values
+      `UPDATE app_user SET ${setClauses.join(", ")} WHERE user_id = $${values.length} AND role = 'user' RETURNING user_id, current_profeciency_level, is_paid, terms_required, terms_accepted`,
+      values,
     );
 
     if (result.rows.length === 0) {

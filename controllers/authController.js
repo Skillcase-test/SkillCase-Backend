@@ -278,10 +278,52 @@ async function completeSignup(req, res) {
 
     await pool.query(
       `UPDATE app_user SET 
-        fullname = $1, username = $1, email = $2, countrycode = $3,
+        fullname = $1, username = $1, email = $2::text, countrycode = $3,
         qualification = $4, language_level = $5, experience = $6,
         current_profeciency_level = $7, status = 1, modified_at = NOW(),
-        signup_source = $9
+        signup_source = $9,
+        terms_required = NOT EXISTS (
+          SELECT 1
+          FROM agreement a
+          WHERE a.agree = TRUE
+            AND (
+              (a.email IS NOT NULL AND a.email <> '' AND LOWER(a.email) = LOWER($2::text))
+              OR (a.phone_number IS NOT NULL AND a.phone_number = $10)
+            )
+        ),
+        terms_accepted = EXISTS (
+          SELECT 1
+          FROM agreement a
+          WHERE a.agree = TRUE
+            AND (
+              (a.email IS NOT NULL AND a.email <> '' AND LOWER(a.email) = LOWER($2::text))
+              OR (a.phone_number IS NOT NULL AND a.phone_number = $10)
+            )
+        ),
+        terms_accepted_at = CASE
+          WHEN EXISTS (
+            SELECT 1
+            FROM agreement a
+            WHERE a.agree = TRUE
+              AND (
+                (a.email IS NOT NULL AND a.email <> '' AND LOWER(a.email) = LOWER($2::text))
+                OR (a.phone_number IS NOT NULL AND a.phone_number = $10)
+              )
+          ) THEN COALESCE(terms_accepted_at, NOW())
+          ELSE NULL
+        END,
+        terms_version = CASE
+          WHEN EXISTS (
+            SELECT 1
+            FROM agreement a
+            WHERE a.agree = TRUE
+              AND (
+                (a.email IS NOT NULL AND a.email <> '' AND LOWER(a.email) = LOWER($2::text))
+                OR (a.phone_number IS NOT NULL AND a.phone_number = $10)
+              )
+          ) THEN COALESCE(terms_version, 'v1')
+          ELSE NULL
+        END
       WHERE user_id = $8`,
       [
         fullname,
@@ -293,6 +335,7 @@ async function completeSignup(req, res) {
         proficiencyLevel,
         user.user_id,
         signup_source || "web",
+        normalizedPhone,
       ],
     );
 
@@ -318,8 +361,8 @@ async function completeSignup(req, res) {
       })
         .then(async (r) => {
           if (!r.ok) {
-              const errText = await r.text();
-              throw new Error("HTTP " + r.status + " " + errText);
+            const errText = await r.text();
+            throw new Error("HTTP " + r.status + " " + errText);
           }
           return r.json();
         })
@@ -381,15 +424,15 @@ async function completeSignup(req, res) {
     if (posthog) {
       posthog.capture({
         distinctId: String(user.user_id),
-        event: 'user_registered',
+        event: "user_registered",
         properties: {
           signup_source: signup_source || "web",
           qualification: qualification,
           language_level: language_level,
           experience: experience,
           proficiency_level: proficiencyLevel,
-          platform: 'backend'
-        }
+          platform: "backend",
+        },
       });
     }
 

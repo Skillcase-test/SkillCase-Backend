@@ -589,8 +589,8 @@ async function uploadFlashcard(req, res) {
         if (matchingFile) {
           usedUploadNames.add(imageNameKey);
           try {
-             // wrap Cloudinary upload in promise
-             const uploaded = await new Promise((resolve, reject) => {
+            // wrap Cloudinary upload in promise
+            const uploaded = await new Promise((resolve, reject) => {
               cloudinary.uploader
                 .upload_stream({ folder: "a1-flashcard" }, (error, result) => {
                   if (error) reject(error);
@@ -601,7 +601,7 @@ async function uploadFlashcard(req, res) {
             frontImageUrl = uploaded.secure_url;
             frontImagePublicId = uploaded.public_id;
             isResolved = true;
-          } catch(err) {
+          } catch (err) {
             console.error("Cloudinary upload failed for", imageNameKey, err);
             isMissing = true;
             frontImageUrl = null;
@@ -620,7 +620,7 @@ async function uploadFlashcard(req, res) {
         front_image_public_id: frontImagePublicId,
         image_name: imageName || null,
         card_index: i,
-        _meta: { imageName, isResolved, isMissing }
+        _meta: { imageName, isResolved, isMissing },
       };
     });
 
@@ -811,6 +811,7 @@ async function uploadReading(req, res) {
             type: jsonData.type,
             title: jsonData.title || topicName,
             content: jsonData.content,
+            context: jsonData.context,
             questions: jsonData.questions,
             hero_image_url: uploadedImageUrl ?? jsonData.hero_image_url ?? null,
           },
@@ -825,14 +826,15 @@ async function uploadReading(req, res) {
 
       await pool.query(
         `
-        INSERT INTO a1_reading_content (chapter_id, title, content_type, content, hero_image_url, vocabulary, questions, order_index)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO a1_reading_content (chapter_id, title, content_type, content, context, hero_image_url, vocabulary, questions, order_index)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `,
         [
           chapterId,
           item.title || topicName,
           item.type || "article",
           item.content || "",
+          item.context || null,
           item.hero_image_url || null,
           JSON.stringify(vocabulary),
           JSON.stringify(item.questions || []),

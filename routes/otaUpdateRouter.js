@@ -4,8 +4,8 @@ const router = express.Router();
 const {
   optionalAuth,
   authMiddleware,
-  authorizeRole,
 } = require("../middlewares/auth_middleware");
+const { authorizeAdminOrSuperAdmin } = require("../middlewares/admin_permission_middleware");
 
 const {
   checkIfNeedUpdate,
@@ -20,6 +20,6 @@ router.get("/check", optionalAuth, checkIfNeedUpdate);
 router.post("/log", authMiddleware, logOtaEvent);
 
 // Get OTA stats
-router.get("/stats", authMiddleware, authorizeRole("admin"), getOtaStats);
+router.get("/stats", authMiddleware, authorizeAdminOrSuperAdmin, getOtaStats);
 
 module.exports = router;

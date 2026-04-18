@@ -162,11 +162,87 @@ async function me(req, res) {
         a2_onboarding_completed: user.a2_onboarding_completed || false,
         fullname: user.fullname || "",
         profile_pic_url: user.profile_pic_url || "",
+        is_paid: user.is_paid || false,
+        terms_required: user.terms_required || false,
+        terms_accepted: user.terms_accepted || false,
+        terms_accepted_at: user.terms_accepted_at || null,
+        terms_version: user.terms_version || null,
       },
     });
   } catch (err) {
     console.error(err);
     return res.status(500).send("Error while accessing DB");
+  }
+}
+
+async function acceptTerms(req, res) {
+  if (!req.user) {
+    return res.status(401).json({ msg: "Unauthorized" });
+  }
+
+  const { user_id } = req.user;
+  const termsVersion = req.body?.termsVersion || "v1";
+  const client = await pool.connect();
+
+  try {
+    const userResult = await client.query(
+      `SELECT user_id, username, fullname, email, phone, number, is_paid
+       FROM app_user
+       WHERE user_id = $1`,
+      [user_id],
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+    const resolvedName = user.fullname || user.username || "SkillCase User";
+    const resolvedEmail =
+      user.email && user.email.trim()
+        ? user.email.trim().toLowerCase()
+        : `${user.user_id}@skillcase.local`;
+    const resolvedPhone = user.phone || user.number || "NA";
+
+    await client.query("BEGIN");
+
+    const acceptedResult = await client.query(
+      `UPDATE app_user
+       SET terms_required = CASE WHEN is_paid = TRUE THEN TRUE ELSE terms_required END,
+           terms_accepted = TRUE,
+           terms_accepted_at = CURRENT_TIMESTAMP,
+           terms_version = $2,
+           modified_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1
+       RETURNING user_id, is_paid, terms_required, terms_accepted, terms_accepted_at, terms_version`,
+      [user_id, termsVersion],
+    );
+
+    await client.query(
+      `INSERT INTO agreement (name, phone_number, email, agree, user_id, modified_at)
+       VALUES ($1, $2, $3, TRUE, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (email)
+       DO UPDATE SET
+         name = EXCLUDED.name,
+         phone_number = EXCLUDED.phone_number,
+         agree = TRUE,
+         user_id = EXCLUDED.user_id,
+         modified_at = CURRENT_TIMESTAMP`,
+      [resolvedName, resolvedPhone, resolvedEmail, user_id],
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      success: true,
+      user: acceptedResult.rows[0],
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error accepting terms:", err);
+    return res.status(500).json({ msg: "Error accepting terms" });
+  } finally {
+    client.release();
   }
 }
 
@@ -546,6 +622,7 @@ module.exports = {
   completeArticleEducation,
   completeA1Onboarding,
   completeA2Onboarding,
+  acceptTerms,
   getProfile,
   updateProfile,
   getNewsHintStatus,

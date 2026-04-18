@@ -31,6 +31,8 @@ router.post(
   userController.completeA2Onboarding,
 );
 
+router.post("/accept-terms", authMiddleware, userController.acceptTerms);
+
 router.post("/notification-opened", authMiddleware, trackNotificationOpen);
 
 // Article Education Routes

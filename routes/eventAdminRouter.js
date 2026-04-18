@@ -13,34 +13,12 @@ const {
   restoreEvent,
   createInstanceOverride,
 } = require("../controllers/eventController");
+const {
+  requireAdminPermission,
+} = require("../middlewares/admin_permission_middleware");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 const { uploadEventImage } = require("../controllers/uploadController");
-
-// Access code verification middleware
-const verifyAccessCode = (req, res, next) => {
-  if (req.method === "OPTIONS") {
-    return next();
-  }
-
-  const accessCode = req.headers["x-access-code"];
-  const VALID_CODE = process.env.EVENT_ADMIN_ACCESS_CODE;
-
-  if (!VALID_CODE) {
-    console.error(
-      "[EventAdmin] EVENT_ADMIN_ACCESS_CODE not set in environment"
-    );
-    return res.status(500).json({ msg: "Server configuration error" });
-  }
-
-  if (accessCode === VALID_CODE) {
-    next();
-  } else {
-    res.status(401).json({ msg: "Invalid access code" });
-  }
-};
-
-// Apply access code verification to all routes
-router.use(verifyAccessCode);
 
 // Configure multer for event image uploads
 const upload = multer({
@@ -56,18 +34,55 @@ const upload = multer({
 });
 
 // Admin routes
-router.post("/", createEvent);
-router.put("/:event_id", updateEvent);
-router.delete("/:event_id", deleteEvent);
-router.get("/", getAllEvents);
-router.get("/:event_id/registrations", getEventRegistrations);
-router.put("/:event_id/restore", restoreEvent);
-router.delete("/:event_id/permanent", permanentDeleteEvent);
+router.post(
+  "/",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.CREATE),
+  createEvent,
+);
+router.put(
+  "/:event_id",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.EDIT),
+  updateEvent,
+);
+router.delete(
+  "/:event_id",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.DELETE),
+  deleteEvent,
+);
+router.get(
+  "/",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.VIEW),
+  getAllEvents,
+);
+router.get(
+  "/:event_id/registrations",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.VIEW),
+  getEventRegistrations,
+);
+router.put(
+  "/:event_id/restore",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.EDIT),
+  restoreEvent,
+);
+router.delete(
+  "/:event_id/permanent",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.DELETE),
+  permanentDeleteEvent,
+);
 
 // Instance override route
-router.post("/:event_id/override", createInstanceOverride);
+router.post(
+  "/:event_id/override",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.EDIT),
+  createInstanceOverride,
+);
 
 // Image upload route
-router.post("/upload-image", upload.single("image"), uploadEventImage);
+router.post(
+  "/upload-image",
+  requireAdminPermission(ADMIN_MODULES.EVENTS, ADMIN_ACTIONS.EDIT),
+  upload.single("image"),
+  uploadEventImage,
+);
 
 module.exports = router;

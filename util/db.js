@@ -21,22 +21,6 @@ pool.on("error", (err, client) => {
   console.error("Unexpected error on idle client", err);
 });
 
-pool.on("connect", () => {
-  console.log("[DB] New client connected");
-});
-
-pool.on("acquire", () => {
-  if (pool.waitingCount > 0) {
-    console.warn(
-      `[DB] Pool pressure: waiting=${pool.waitingCount} total=${pool.totalCount} idle=${pool.idleCount}`,
-    );
-  }
-});
-
-pool.on("remove", () => {
-  console.log("[DB] Client removed from pool");
-});
-
 pool
   .connect()
   .then((client) => {
@@ -101,6 +85,7 @@ async function initDb(pool) {
 
     // A1 revamp
     await pool.query(queries.createA1Tables);
+    await pool.query(queries.createAdminRBAC);
 
     console.log("Tables created or already exist!");
   } catch (err) {

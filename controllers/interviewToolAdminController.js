@@ -220,11 +220,13 @@ async function createPosition(req, res) {
          allowed_retakes,
          slug,
          status,
-         created_by
+         created_by,
+         intro_video_duration_seconds,
+         farewell_video_duration_seconds
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
-         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
        )
        RETURNING *`,
       [
@@ -247,6 +249,8 @@ async function createPosition(req, res) {
         finalSlug,
         status,
         req.user.user_id,
+        req.body.intro_video_duration_seconds ?? null,
+        req.body.farewell_video_duration_seconds ?? null,
       ],
     );
 
@@ -261,15 +265,17 @@ async function createPosition(req, res) {
            question_order,
            title,
            short_description,
-           video_key
+           video_key,
+           video_duration_seconds
          )
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           position.position_id,
           index + 1,
           item.title,
           item.short_description || "",
           item.video_key,
+          item.video_duration_seconds ?? null,
         ],
       );
     }
@@ -362,6 +368,8 @@ async function updatePosition(req, res) {
          allowed_retakes = $16,
          slug = $17,
          status = $18,
+         intro_video_duration_seconds = $20,
+         farewell_video_duration_seconds = $21,
          updated_at = NOW()
        WHERE position_id = $19
        RETURNING *`,
@@ -385,6 +393,8 @@ async function updatePosition(req, res) {
         finalSlug,
         status,
         positionId,
+        req.body.intro_video_duration_seconds ?? null,
+        req.body.farewell_video_duration_seconds ?? null,
       ],
     );
 
@@ -407,15 +417,17 @@ async function updatePosition(req, res) {
            question_order,
            title,
            short_description,
-           video_key
+           video_key,
+           video_duration_seconds
          )
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           Number(positionId),
           index + 1,
           item.title,
           item.short_description || "",
           item.video_key,
+          item.video_duration_seconds ?? null,
         ],
       );
     }
@@ -517,6 +529,7 @@ async function getCandidateSubmissionDetail(req, res) {
          q.title,
          q.short_description,
          q.video_key AS question_video_key,
+         q.video_duration_seconds,
          a.answer_id,
          a.answer_order,
          a.answer_video_key,
@@ -536,7 +549,9 @@ async function getCandidateSubmissionDetail(req, res) {
     const answers = await Promise.all(
       answersResult.rows.map(async (row) => ({
         ...row,
-        question_video_url: await getInterviewDownloadUrl(row.question_video_key),
+        question_video_url: await getInterviewDownloadUrl(
+          row.question_video_key,
+        ),
         answer_video_url: await getInterviewDownloadUrl(row.answer_video_key),
       })),
     );

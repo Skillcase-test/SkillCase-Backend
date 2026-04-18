@@ -35,15 +35,18 @@ async function getPositionWithQuestionsBySlug(slug) {
       title: row.title,
       short_description: row.short_description,
       video_url: await getInterviewDownloadUrl(row.video_key),
+      video_duration_seconds: row.video_duration_seconds,
     })),
   );
 
   return {
     ...position,
     intro_video_url: await getInterviewDownloadUrl(position.intro_video_key),
+    intro_video_duration_seconds: position.intro_video_duration_seconds,
     farewell_video_url: await getInterviewDownloadUrl(
       position.farewell_video_key,
     ),
+    farewell_video_duration_seconds: position.farewell_video_duration_seconds,
     questions,
   };
 }
@@ -84,9 +87,12 @@ async function getPublicPosition(req, res) {
         employment_type: position.employment_type,
         short_description: position.short_description,
         intro_video_url: position.intro_video_url,
+        intro_video_duration_seconds: position.intro_video_duration_seconds,
         intro_video_title: position.intro_video_title,
         intro_video_description: position.intro_video_description,
         farewell_video_url: position.farewell_video_url,
+        farewell_video_duration_seconds:
+          position.farewell_video_duration_seconds,
         farewell_video_title: position.farewell_video_title,
         farewell_video_description: position.farewell_video_description,
         thank_you_message: position.thank_you_message,
@@ -145,9 +151,13 @@ async function startSubmission(req, res) {
               title: position.title,
               role_title: position.role_title,
               intro_video_url: position.intro_video_url,
+              intro_video_duration_seconds:
+                position.intro_video_duration_seconds,
               intro_video_title: position.intro_video_title,
               intro_video_description: position.intro_video_description,
               farewell_video_url: position.farewell_video_url,
+              farewell_video_duration_seconds:
+                position.farewell_video_duration_seconds,
               farewell_video_title: position.farewell_video_title,
               farewell_video_description: position.farewell_video_description,
               thank_you_message: position.thank_you_message,
@@ -392,8 +402,7 @@ async function createAnswerUploadUrl(req, res) {
 
   if (!session_token || !question_id || !contentType) {
     return res.status(400).json({
-      message:
-        "session_token, question_id and contentType are required",
+      message: "session_token, question_id and contentType are required",
     });
   }
 
