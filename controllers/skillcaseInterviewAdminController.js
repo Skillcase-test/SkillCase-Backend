@@ -14,6 +14,10 @@ const {
 
 const INTERVIEW_SCOPE = "skillcase_interviews";
 
+function isNumericId(value) {
+  return /^\d+$/.test(String(value ?? ""));
+}
+
 function isSuperAdmin(req) {
   return Boolean(
     req?.adminAccess?.isSuperAdmin || req?.user?.role === "super_admin",
@@ -170,7 +174,9 @@ async function getUploadUrl(req, res) {
   }
 
   try {
-    if (positionId) {
+    // Access check is only valid for persisted DB rows (integer IDs).
+    // During create flow, frontend sends a UUID draft id for temporary storage grouping.
+    if (positionId && isNumericId(positionId)) {
       const access = await getPositionAccess(positionId, req);
       if (!access.allowed) {
         return res.status(access.status).json({ message: access.message });
@@ -268,7 +274,8 @@ async function createPosition(req, res) {
          status,
          created_by,
          intro_video_duration_seconds,
-         farewell_video_duration_seconds
+         farewell_video_duration_seconds,
+         interview_scope
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
