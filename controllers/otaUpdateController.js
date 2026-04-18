@@ -12,7 +12,7 @@ const {
 // 3. Update PREVIOUS_VERSION to the old CURRENT_VERSION (used for stats only)
 // 4. Deploy the new bundle.zip to /public/updates/
 const CURRENT_VERSION = "1.1.4";
-const MIN_OTA_VERSION = "1.1.3"; // Versions ABOVE this (exclusive) get OTA — equal/below go to Play Store
+const MIN_OTA_VERSION = "1.1.3"; // Versions at or above this (inclusive) and below CURRENT_VERSION get OTA
 const PREVIOUS_VERSION = "1.1.3"; // For stats tracking only — not used in update routing
 
 const BUNDLE_URL = `${process.env.BACKEND_URL}/updates/bundle.zip`;
@@ -69,7 +69,8 @@ const checkIfNeedUpdate = async (req, res) => {
     status = UPDATE_STATUS.NEWER_VERSION;
     message = "Development version detected";
   } else if (
-    isVersionGreaterThan(appVersion, MIN_OTA_VERSION) &&
+    (isVersionGreaterThan(appVersion, MIN_OTA_VERSION) ||
+      isVersionEqual(appVersion, MIN_OTA_VERSION)) &&
     isVersionLessThan(appVersion, CURRENT_VERSION)
   ) {
     status = UPDATE_STATUS.OTA_AVAILABLE;
@@ -146,8 +147,8 @@ const getOtaStats = async (req, res) => {
       SELECT 
         (SELECT COUNT(*) FROM app_user WHERE fcm_token IS NOT NULL) as total_app_users,
         (SELECT COUNT(*) FROM app_user WHERE app_version = $1) as on_latest_version,
-        (SELECT COUNT(*) FROM app_user WHERE app_version IS NOT NULL AND string_to_array(app_version, '.')::int[] > string_to_array($2, '.')::int[] AND string_to_array(app_version, '.')::int[] < string_to_array($1, '.')::int[]) as on_ota_eligible,
-        (SELECT COUNT(*) FROM app_user WHERE app_version IS NOT NULL AND string_to_array(app_version, '.')::int[] <= string_to_array($2, '.')::int[]) as on_older_versions,
+        (SELECT COUNT(*) FROM app_user WHERE app_version IS NOT NULL AND string_to_array(app_version, '.')::int[] >= string_to_array($2, '.')::int[] AND string_to_array(app_version, '.')::int[] < string_to_array($1, '.')::int[]) as on_ota_eligible,
+        (SELECT COUNT(*) FROM app_user WHERE app_version IS NOT NULL AND string_to_array(app_version, '.')::int[] < string_to_array($2, '.')::int[]) as on_older_versions,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'download_started' AND created_at > NOW() - INTERVAL '7 days') as downloads_attempted,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'download_complete' AND created_at > NOW() - INTERVAL '7 days') as downloads_succeeded,
         (SELECT COUNT(*) FROM ota_update_log WHERE event = 'download_failed' AND created_at > NOW() - INTERVAL '7 days') as downloads_failed,
