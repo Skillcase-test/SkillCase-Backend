@@ -4,6 +4,7 @@ const ADMIN_MODULES = {
   A2_CONTENT: "a2_content",
   EVENTS: "events",
   INTERVIEW_TOOLS: "interview_tools",
+  SKILLCASE_INTERVIEWS: "skillcase_interviews",
   CONVERSATIONS: "conversations",
   EXAM: "exam",
   BATCH: "batch",

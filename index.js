@@ -54,6 +54,7 @@ const syncRouter = require("./routes/syncRouter");
 
 // Interview
 const interviewToolAdminRouter = require("./routes/interviewToolAdminRouter");
+const skillcaseInterviewAdminRouter = require("./routes/skillcaseInterviewAdminRouter");
 const interviewToolPublicRouter = require("./routes/interviewToolPublicRouter");
 
 // Wise
@@ -330,6 +331,14 @@ app.use(
   authorizeAdminOrSuperAdmin,
   hydrateAdminAccess,
   interviewToolAdminRouter,
+);
+
+app.use(
+  "/api/admin/skillcase-interviews",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  skillcaseInterviewAdminRouter,
 );
 
 app.use("/api/interview-tools", interviewToolPublicRouter);

@@ -1,4 +1,4 @@
-﻿const { pool } = require("../util/db");
+const { pool } = require("../util/db");
 const {
   getInterviewUploadUrl,
   getInterviewDownloadUrl,
@@ -12,18 +12,29 @@ const {
   parseFileExtension,
 } = require("../util/interviewToolsUtils");
 
-const INTERVIEW_SCOPE = "interview_tools";
+const INTERVIEW_SCOPE = "skillcase_interviews";
 
-async function ensurePositionInScope(positionId, db = pool) {
+function isSuperAdmin(req) {
+  return Boolean(
+    req?.adminAccess?.isSuperAdmin || req?.user?.role === "super_admin",
+  );
+}
+
+async function getPositionAccess(positionId, req, db = pool) {
   const result = await db.query(
-    `SELECT position_id
-     FROM interview_position
-     WHERE position_id = $1
-       AND (interview_scope = $2 OR interview_scope IS NULL)`,
+    `SELECT position_id, created_by FROM interview_position WHERE position_id = $1 AND interview_scope = $2`,
     [positionId, INTERVIEW_SCOPE],
   );
 
-  return result.rows.length > 0;
+  if (!result.rows.length) {
+    return { allowed: false, status: 404, message: "Position not found" };
+  }
+
+  if (isSuperAdmin(req) || result.rows[0].created_by === req.user.user_id) {
+    return { allowed: true, position: result.rows[0] };
+  }
+
+  return { allowed: false, status: 403, message: "Access denied" };
 }
 
 async function buildPositionPayload(position) {
@@ -48,6 +59,7 @@ async function buildPositionPayload(position) {
 
   return {
     ...position,
+    details: position.role_title || "",
     intro_video_url: introVideoUrl,
     farewell_video_url: farewellVideoUrl,
     questions,
@@ -88,9 +100,19 @@ async function getPositionSubmissionCount(positionId) {
 
 async function listPositions(req, res) {
   try {
+    const params = [INTERVIEW_SCOPE];
+    let whereClause = "WHERE p.interview_scope = $1";
+
+    if (!isSuperAdmin(req)) {
+      whereClause += " AND p.created_by = $2";
+      params.push(req.user.user_id);
+    }
+
     const result = await pool.query(
       `SELECT
          p.*,
+         p.role_title AS details,
+         u.username AS created_by_username,
          (
            SELECT COUNT(*)::int
            FROM interview_position_question q
@@ -102,9 +124,10 @@ async function listPositions(req, res) {
            WHERE s.position_id = p.position_id AND s.status = 'completed'
          ) AS completed_submission_count
        FROM interview_position p
-      WHERE (p.interview_scope = $1 OR p.interview_scope IS NULL)
+       LEFT JOIN app_user u ON u.user_id = p.created_by
+       ${whereClause}
        ORDER BY p.updated_at DESC`,
-      [INTERVIEW_SCOPE],
+      params,
     );
 
     res.status(200).json({ data: result.rows });
@@ -118,17 +141,15 @@ async function getPositionById(req, res) {
   const { positionId } = req.params;
 
   try {
-    const result = await pool.query(
-      `SELECT *
-       FROM interview_position
-       WHERE position_id = $1
-         AND (interview_scope = $2 OR interview_scope IS NULL)`,
-      [positionId, INTERVIEW_SCOPE],
-    );
-
-    if (!result.rows.length) {
-      return res.status(404).json({ message: "Position not found" });
+    const access = await getPositionAccess(positionId, req);
+    if (!access.allowed) {
+      return res.status(access.status).json({ message: access.message });
     }
+
+    const result = await pool.query(
+      `SELECT * FROM interview_position WHERE position_id = $1`,
+      [positionId],
+    );
 
     const payload = await buildPositionPayload(result.rows[0]);
     res.status(200).json({ data: payload });
@@ -150,9 +171,9 @@ async function getUploadUrl(req, res) {
 
   try {
     if (positionId) {
-      const inScope = await ensurePositionInScope(positionId);
-      if (!inScope) {
-        return res.status(404).json({ message: "Position not found" });
+      const access = await getPositionAccess(positionId, req);
+      if (!access.allowed) {
+        return res.status(access.status).json({ message: access.message });
       }
     }
 
@@ -188,10 +209,7 @@ async function getUploadUrl(req, res) {
 async function createPosition(req, res) {
   const {
     title,
-    role_title,
-    department = "",
-    location = "",
-    employment_type = "",
+    details,
     short_description = "",
     intro_video_key = null,
     intro_video_title = "",
@@ -208,14 +226,16 @@ async function createPosition(req, res) {
     questions = [],
   } = req.body;
 
+  const normalizedDetails = String(details || req.body.role_title || "").trim();
+
   if (
     !title ||
-    !role_title ||
+    !normalizedDetails ||
     !Array.isArray(questions) ||
     questions.length === 0
   ) {
     return res.status(400).json({
-      message: "title, role_title and at least one question are required",
+      message: "title, details and at least one question are required",
     });
   }
 
@@ -257,10 +277,10 @@ async function createPosition(req, res) {
        RETURNING *`,
       [
         title,
-        role_title,
-        department,
-        location,
-        employment_type,
+        normalizedDetails,
+        "",
+        "",
+        "",
         short_description,
         intro_video_key,
         intro_video_title,
@@ -322,10 +342,10 @@ async function createPosition(req, res) {
 
 async function updatePosition(req, res) {
   const { positionId } = req.params;
-  const inScope = await ensurePositionInScope(positionId);
+  const access = await getPositionAccess(positionId, req);
 
-  if (!inScope) {
-    return res.status(404).json({ message: "Position not found" });
+  if (!access.allowed) {
+    return res.status(access.status).json({ message: access.message });
   }
 
   const submissionCount = await getPositionSubmissionCount(positionId);
@@ -339,10 +359,7 @@ async function updatePosition(req, res) {
 
   const {
     title,
-    role_title,
-    department = "",
-    location = "",
-    employment_type = "",
+    details,
     short_description = "",
     intro_video_key = null,
     intro_video_title = "",
@@ -359,14 +376,16 @@ async function updatePosition(req, res) {
     questions = [],
   } = req.body;
 
+  const normalizedDetails = String(details || req.body.role_title || "").trim();
+
   if (
     !title ||
-    !role_title ||
+    !normalizedDetails ||
     !Array.isArray(questions) ||
     questions.length === 0
   ) {
     return res.status(400).json({
-      message: "title, role_title and at least one question are required",
+      message: "title, details and at least one question are required",
     });
   }
 
@@ -379,6 +398,37 @@ async function updatePosition(req, res) {
       slug || generateShortSlug(),
       positionId,
     );
+
+    const params = [
+      title,
+      normalizedDetails,
+      "",
+      "",
+      "",
+      short_description,
+      intro_video_key,
+      intro_video_title,
+      intro_video_description,
+      farewell_video_key,
+      farewell_video_title,
+      farewell_video_description,
+      thank_you_message,
+      thinking_time_seconds ?? 3,
+      answer_time_seconds ?? null,
+      allowed_retakes ?? 0,
+      finalSlug,
+      status,
+      positionId,
+      req.body.intro_video_duration_seconds ?? null,
+      req.body.farewell_video_duration_seconds ?? null,
+      INTERVIEW_SCOPE,
+    ];
+
+    let whereClause = "WHERE position_id = $19 AND interview_scope = $22";
+    if (!isSuperAdmin(req)) {
+      whereClause += " AND created_by = $23";
+      params.push(req.user.user_id);
+    }
 
     const result = await client.query(
       `UPDATE interview_position
@@ -404,32 +454,9 @@ async function updatePosition(req, res) {
          intro_video_duration_seconds = $20,
          farewell_video_duration_seconds = $21,
          updated_at = NOW()
-      WHERE position_id = $19 AND (interview_scope = $22 OR interview_scope IS NULL)
+       ${whereClause}
        RETURNING *`,
-      [
-        title,
-        role_title,
-        department,
-        location,
-        employment_type,
-        short_description,
-        intro_video_key,
-        intro_video_title,
-        intro_video_description,
-        farewell_video_key,
-        farewell_video_title,
-        farewell_video_description,
-        thank_you_message,
-        thinking_time_seconds ?? 3,
-        answer_time_seconds ?? null,
-        allowed_retakes ?? 0,
-        finalSlug,
-        status,
-        positionId,
-        req.body.intro_video_duration_seconds ?? null,
-        req.body.farewell_video_duration_seconds ?? null,
-        INTERVIEW_SCOPE,
-      ],
+      params,
     );
 
     if (!result.rows.length) {
@@ -488,12 +515,24 @@ async function updatePositionStatus(req, res) {
   }
 
   try {
+    const access = await getPositionAccess(positionId, req);
+    if (!access.allowed) {
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    const params = [status, positionId, INTERVIEW_SCOPE];
+    let whereClause = "WHERE position_id = $2 AND interview_scope = $3";
+    if (!isSuperAdmin(req)) {
+      whereClause += " AND created_by = $4";
+      params.push(req.user.user_id);
+    }
+
     const result = await pool.query(
       `UPDATE interview_position
        SET status = $1, updated_at = NOW()
-      WHERE position_id = $2 AND (interview_scope = $3 OR interview_scope IS NULL)
+       ${whereClause}
        RETURNING *`,
-      [status, positionId, INTERVIEW_SCOPE],
+      params,
     );
 
     if (!result.rows.length) {
@@ -511,9 +550,9 @@ async function getCandidatesByPosition(req, res) {
   const { positionId } = req.params;
 
   try {
-    const inScope = await ensurePositionInScope(positionId);
-    if (!inScope) {
-      return res.status(404).json({ message: "Position not found" });
+    const access = await getPositionAccess(positionId, req);
+    if (!access.allowed) {
+      return res.status(access.status).json({ message: access.message });
     }
 
     const result = await pool.query(
@@ -549,9 +588,9 @@ async function getCandidateSubmissionDetail(req, res) {
   const { positionId, submissionId } = req.params;
 
   try {
-    const inScope = await ensurePositionInScope(positionId);
-    if (!inScope) {
-      return res.status(404).json({ message: "Position not found" });
+    const access = await getPositionAccess(positionId, req);
+    if (!access.allowed) {
+      return res.status(access.status).json({ message: access.message });
     }
 
     const submissionResult = await pool.query(
@@ -631,9 +670,9 @@ async function reviewCandidateSubmission(req, res) {
   const client = await pool.connect();
 
   try {
-    const inScope = await ensurePositionInScope(positionId, client);
-    if (!inScope) {
-      return res.status(404).json({ message: "Position not found" });
+    const access = await getPositionAccess(positionId, req, client);
+    if (!access.allowed) {
+      return res.status(access.status).json({ message: access.message });
     }
 
     await client.query("BEGIN");
@@ -710,11 +749,16 @@ async function deletePosition(req, res) {
   let transactionStarted = false;
 
   try {
+    const access = await getPositionAccess(positionId, req, client);
+    if (!access.allowed) {
+      return res.status(access.status).json({ message: access.message });
+    }
+
     const positionResult = await client.query(
       `SELECT position_id, intro_video_key, farewell_video_key
        FROM interview_position
-       WHERE position_id = $1 AND (interview_scope = $2 OR interview_scope IS NULL)`,
-      [positionId, INTERVIEW_SCOPE],
+       WHERE position_id = $1`,
+      [positionId],
     );
 
     if (!positionResult.rows.length) {

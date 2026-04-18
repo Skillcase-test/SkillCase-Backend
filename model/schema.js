@@ -1053,6 +1053,9 @@ CREATE TABLE IF NOT EXISTS interview_position (
     status IN ('draft', 'published_open', 'published_closed')
   ),
   preview_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  interview_scope VARCHAR(40) NOT NULL DEFAULT 'interview_tools' CHECK (
+    interview_scope IN ('interview_tools', 'skillcase_interviews')
+  ),
   created_by VARCHAR(50) REFERENCES app_user(user_id),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -1117,6 +1120,25 @@ CREATE INDEX IF NOT EXISTS idx_interview_answer_submission ON interview_submissi
 ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS intro_video_duration_seconds NUMERIC(10,2);
 ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS farewell_video_duration_seconds NUMERIC(10,2);
 ALTER TABLE interview_position_question ADD COLUMN IF NOT EXISTS video_duration_seconds NUMERIC(10,2);
+ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS interview_scope VARCHAR(40);
+UPDATE interview_position
+SET interview_scope = 'interview_tools'
+WHERE interview_scope IS NULL OR interview_scope = '';
+ALTER TABLE interview_position ALTER COLUMN interview_scope SET DEFAULT 'interview_tools';
+ALTER TABLE interview_position ALTER COLUMN interview_scope SET NOT NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'interview_position_scope_check'
+  ) THEN
+    ALTER TABLE interview_position
+      ADD CONSTRAINT interview_position_scope_check
+      CHECK (interview_scope IN ('interview_tools', 'skillcase_interviews'));
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_interview_position_scope ON interview_position(interview_scope);
 `;
 
 const createWiseTranscripts = `
