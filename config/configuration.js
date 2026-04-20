@@ -85,6 +85,7 @@ const DB_MAX_USES = Number(process.env.DB_MAX_USES || 7500);
 
 const RUN_SCHEDULED_JOBS =
   String(process.env.RUN_SCHEDULED_JOBS || "true").toLowerCase() === "true";
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
 
 const db_config = {
   connection_string: process.env.CON_STRING,
@@ -137,4 +138,5 @@ module.exports = {
   INTERVIEW_UPLOAD_URL_EXPIRY_SECONDS,
   INTERVIEW_DOWNLOAD_URL_EXPIRY_SECONDS,
   RUN_SCHEDULED_JOBS,
+  INTERNAL_API_KEY,
 };

@@ -84,6 +84,9 @@ const {
   authorizeAdminOrSuperAdmin,
 } = require("./middlewares/admin_permission_middleware");
 const {
+  requireInternalAuth,
+} = require("./middlewares/internal_auth_middleware");
+const {
   requirePaidTermsAcceptance,
 } = require("./middlewares/terms_acceptance_middleware");
 
@@ -313,13 +316,7 @@ app.use("/api/admin/landing-page", landingPageRouter);
 // News Module
 app.use("/api/news", authMiddleware, requirePaidTermsAcceptance, newsRouter);
 
-app.use(
-  "/api/internal",
-  authMiddleware,
-  authorizeAdminOrSuperAdmin,
-  hydrateAdminAccess,
-  internalRouter,
-);
+app.use("/api/internal", requireInternalAuth, internalRouter);
 
 // Sync
 app.use("/api/sync", syncRouter);
