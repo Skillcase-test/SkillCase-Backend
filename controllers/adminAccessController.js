@@ -37,14 +37,21 @@ async function listAdminUsers(req, res) {
       OR LOWER(COALESCE(username, '')) LIKE $${params.length}
       OR LOWER(COALESCE(email, '')) LIKE $${params.length}
       OR COALESCE(phone, '') LIKE $${params.length}
+      OR COALESCE(number, '') LIKE $${params.length}
     )`;
   }
 
   const result = await pool.query(
-    `SELECT user_id, username, fullname, email, phone, role
+    `SELECT user_id, username, fullname, email, phone, number, role
      FROM app_user
      ${whereSql}
-     ORDER BY role DESC, created_at DESC
+     ORDER BY
+       CASE role
+         WHEN 'super_admin' THEN 1
+         WHEN 'admin' THEN 2
+         ELSE 3
+       END,
+       created_at DESC
      LIMIT 300`,
     params,
   );
