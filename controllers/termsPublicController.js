@@ -22,6 +22,17 @@ function normalizeFieldValue(value) {
   return normalizeString(value);
 }
 
+function getValueCaseInsensitive(source, key) {
+  const target = normalizeString(key).toLowerCase();
+  if (!target || !source || typeof source !== "object") return "";
+  for (const [entryKey, entryValue] of Object.entries(source)) {
+    if (normalizeString(entryKey).toLowerCase() === target) {
+      return normalizeFieldValue(entryValue);
+    }
+  }
+  return "";
+}
+
 function getFieldDefaultValue(field) {
   const config = field?.config_json && typeof field.config_json === "object"
     ? field.config_json
@@ -262,14 +273,28 @@ async function submitSignedDocument(req, res) {
     }
 
     const requiresSignature = fields.some((field) => isSignatureFieldUserRequired(field));
+    const signatureFieldKeys = fields
+      .filter((field) => isSignatureFieldUserRequired(field))
+      .map((field) => String(field.field_key || "").trim())
+      .filter(Boolean);
+    const signatureTextFromMappedFields = signatureFieldKeys.find((key) =>
+      normalizeString(getValueCaseInsensitive(effectiveFieldValues, key)),
+    );
+    const signatureTextFallback = [
+      getValueCaseInsensitive(effectiveFieldValues, "signature"),
+      getValueCaseInsensitive(effectiveFieldValues, "full_name"),
+      getValueCaseInsensitive(effectiveFieldValues, "name"),
+      getValueCaseInsensitive(effectiveFieldValues, "candidate_name"),
+    ].find((value) => normalizeString(value));
+    const hasTypedSignatureText = Boolean(
+      normalizeString(signatureTextFromMappedFields) ||
+        normalizeString(signatureTextFallback),
+    );
     if (
       requiresSignature &&
       ((signatureMode === "typed" &&
-        !normalizeString(
-          effectiveFieldValues.signature ||
-            effectiveFieldValues.full_name ||
-            effectiveFieldValues.name,
-        )) ||
+        !hasTypedSignatureText &&
+        !signatureImageDataUrl) ||
         ((signatureMode === "drawn" || signatureMode === "uploaded") &&
           !signatureImageDataUrl))
     ) {

@@ -46,8 +46,19 @@ function pickTypedSignatureStyle(seed = "") {
 }
 
 function resolveSignatureValue(envelope, fieldValues, fallback = "") {
-  const fromPayload = normalizeString(fieldValues.signature);
-  return fromPayload || fallback;
+  if (!fieldValues || typeof fieldValues !== "object") return fallback;
+  const candidates = ["signature", "Signature", "full_name", "Full_Name", "name", "Name", "candidate_name", "Candidate_Name"];
+  for (const key of candidates) {
+    const value = normalizeString(fieldValues[key]);
+    if (value) return value;
+  }
+  for (const [key, value] of Object.entries(fieldValues)) {
+    if (String(key || "").trim().toLowerCase() === "signature") {
+      const normalized = normalizeString(value);
+      if (normalized) return normalized;
+    }
+  }
+  return fallback;
 }
 
 function getFieldDefaultValue(field) {
