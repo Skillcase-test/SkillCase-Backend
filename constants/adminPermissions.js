@@ -14,6 +14,7 @@ const ADMIN_MODULES = {
   INTERNAL: "internal",
   STORIES: "stories",
   AGREEMENTS: "agreements",
+  TERMS: "terms",
   LEGACY_A1: "legacy_a1",
 };
 

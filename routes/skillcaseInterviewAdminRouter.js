@@ -5,6 +5,7 @@ const {
   getPositionById,
   getUploadUrl,
   createPosition,
+  duplicatePosition,
   updatePosition,
   updatePositionStatus,
   getCandidatesByPosition,
@@ -51,6 +52,14 @@ router.post(
     ADMIN_ACTIONS.CREATE,
   ),
   createPosition,
+);
+router.post(
+  "/positions/:positionId/duplicate",
+  requireAdminPermission(
+    ADMIN_MODULES.SKILLCASE_INTERVIEWS,
+    ADMIN_ACTIONS.CREATE,
+  ),
+  duplicatePosition,
 );
 router.put(
   "/positions/:positionId",

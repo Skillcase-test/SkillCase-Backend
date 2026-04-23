@@ -1,7 +1,12 @@
 const { pool } = require("../util/db");
+const { TERMS_ENFORCEMENT_ENABLED } = require("../config/configuration");
 
 async function requirePaidTermsAcceptance(req, res, next) {
   try {
+    if (!TERMS_ENFORCEMENT_ENABLED) {
+      return next();
+    }
+
     if (!req.user || req.user.role !== "user") {
       return next();
     }

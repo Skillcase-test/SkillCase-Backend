@@ -1435,6 +1435,102 @@ CREATE INDEX IF NOT EXISTS idx_admin_wise_batch_access_user ON admin_wise_batch_
 CREATE INDEX IF NOT EXISTS idx_admin_wise_batch_access_batch ON admin_wise_batch_access(batch_id);
 `;
 
+const createTermsSigningTables = `
+CREATE TABLE IF NOT EXISTS terms_template (
+  template_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title VARCHAR(255) NOT NULL,
+  description TEXT DEFAULT '',
+  source_pdf_key TEXT NOT NULL,
+  source_pdf_filename VARCHAR(255) NOT NULL,
+  page_count INTEGER DEFAULT 0,
+  status VARCHAR(30) NOT NULL DEFAULT 'draft' CHECK (
+    status IN ('draft', 'published', 'archived')
+  ),
+  created_by VARCHAR(50) REFERENCES app_user(user_id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_terms_template_status ON terms_template(status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS terms_template_field (
+  field_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id UUID NOT NULL REFERENCES terms_template(template_id) ON DELETE CASCADE,
+  field_key VARCHAR(80) NOT NULL,
+  field_type VARCHAR(40) NOT NULL CHECK (
+    field_type IN ('text', 'textarea', 'date', 'checkbox', 'signature', 'initials', 'label')
+  ),
+  label VARCHAR(255) DEFAULT '',
+  placeholder VARCHAR(255) DEFAULT '',
+  required BOOLEAN NOT NULL DEFAULT FALSE,
+  page_number INTEGER NOT NULL,
+  x NUMERIC(8, 5) NOT NULL,
+  y NUMERIC(8, 5) NOT NULL,
+  width NUMERIC(8, 5) NOT NULL,
+  height NUMERIC(8, 5) NOT NULL,
+  field_order INTEGER NOT NULL DEFAULT 0,
+  style_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (template_id, field_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_terms_field_template_page_order
+ON terms_template_field(template_id, page_number, field_order);
+
+CREATE TABLE IF NOT EXISTS terms_envelope (
+  envelope_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id UUID NOT NULL REFERENCES terms_template(template_id) ON DELETE RESTRICT,
+  recipient_email VARCHAR(255) NOT NULL,
+  recipient_name VARCHAR(255) DEFAULT '',
+  recipient_phone VARCHAR(30) DEFAULT '',
+  sender_user_id VARCHAR(50) REFERENCES app_user(user_id),
+  token_hash VARCHAR(128) NOT NULL UNIQUE,
+  token_hint VARCHAR(12) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'sent' CHECK (
+    status IN ('sent', 'viewed', 'signed', 'expired', 'cancelled')
+  ),
+  expires_at TIMESTAMP NOT NULL,
+  sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  viewed_at TIMESTAMP,
+  signed_at TIMESTAMP,
+  signed_pdf_key TEXT,
+  signed_pdf_filename VARCHAR(255),
+  meta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_terms_envelope_template ON terms_envelope(template_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_terms_envelope_email ON terms_envelope(LOWER(recipient_email), created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_terms_envelope_status ON terms_envelope(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS terms_submission (
+  submission_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  envelope_id UUID NOT NULL UNIQUE REFERENCES terms_envelope(envelope_id) ON DELETE CASCADE,
+  field_values_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  signature_mode VARCHAR(30) NOT NULL CHECK (
+    signature_mode IN ('typed', 'drawn', 'uploaded')
+  ),
+  signature_asset_key TEXT,
+  typed_signature_font VARCHAR(100),
+  audit_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS terms_event_log (
+  event_id BIGSERIAL PRIMARY KEY,
+  envelope_id UUID NOT NULL REFERENCES terms_envelope(envelope_id) ON DELETE CASCADE,
+  event_type VARCHAR(50) NOT NULL,
+  event_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_terms_event_log_envelope
+ON terms_event_log(envelope_id, created_at DESC);
+`;
+
 module.exports = {
   createFlashCardSet,
   createCards,
@@ -1483,4 +1579,5 @@ module.exports = {
   createWiseBatchStatus,
   createA1Tables,
   createAdminRBAC,
+  createTermsSigningTables,
 };

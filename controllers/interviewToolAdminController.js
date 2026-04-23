@@ -1,9 +1,11 @@
 ﻿const { pool } = require("../util/db");
+const crypto = require("crypto");
 const {
   getInterviewUploadUrl,
   getInterviewDownloadUrl,
   listInterviewObjectKeys,
   deleteInterviewObjects,
+  copyInterviewObject,
 } = require("../config/interviewS3");
 const {
   generateShortSlug,
@@ -13,6 +15,68 @@ const {
 } = require("../util/interviewToolsUtils");
 
 const INTERVIEW_SCOPE = "interview_tools";
+
+function getKeyExtension(key = "", fallback = "webm") {
+  const match = String(key).match(/\.([^.]+)$/);
+  return match?.[1]?.toLowerCase() || fallback;
+}
+
+async function cloneInterviewMediaKey({
+  sourceKey,
+  kind,
+  positionId,
+  questionId = null,
+}) {
+  if (!sourceKey) return null;
+
+  const ext = getKeyExtension(sourceKey);
+  const destinationKey = buildInterviewStorageKey({
+    kind,
+    positionId,
+    questionId,
+    ext,
+  });
+
+  await copyInterviewObject(sourceKey, destinationKey, `video/${ext}`);
+  return destinationKey;
+}
+
+async function getSharedInterviewMediaKeys(positionId, db = pool) {
+  const result = await db.query(
+    `WITH target_keys AS (
+       SELECT intro_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id = $1 AND intro_video_key IS NOT NULL
+       UNION
+       SELECT farewell_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id = $1 AND farewell_video_key IS NOT NULL
+       UNION
+       SELECT video_key AS s3_key
+       FROM interview_position_question
+       WHERE position_id = $1 AND video_key IS NOT NULL
+     ),
+     other_refs AS (
+       SELECT intro_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id <> $1 AND intro_video_key IS NOT NULL
+       UNION ALL
+       SELECT farewell_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id <> $1 AND farewell_video_key IS NOT NULL
+       UNION ALL
+       SELECT video_key AS s3_key
+       FROM interview_position_question
+       WHERE position_id <> $1 AND video_key IS NOT NULL
+     )
+     SELECT DISTINCT t.s3_key
+     FROM target_keys t
+     JOIN other_refs o ON o.s3_key = t.s3_key`,
+    [positionId],
+  );
+
+  return new Set(result.rows.map((row) => row.s3_key).filter(Boolean));
+}
 
 async function ensurePositionInScope(positionId, db = pool) {
   const result = await db.query(
@@ -248,7 +312,8 @@ async function createPosition(req, res) {
          status,
          created_by,
          intro_video_duration_seconds,
-         farewell_video_duration_seconds
+         farewell_video_duration_seconds,
+         interview_scope
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
@@ -315,6 +380,169 @@ async function createPosition(req, res) {
     await client.query("ROLLBACK");
     console.error("Error creating interview position:", error);
     res.status(500).json({ message: "Could not create interview position" });
+  } finally {
+    client.release();
+  }
+}
+
+async function duplicatePosition(req, res) {
+  const { positionId } = req.params;
+  const client = await pool.connect();
+  let transactionStarted = false;
+
+  try {
+    const inScope = await ensurePositionInScope(positionId, client);
+    if (!inScope) {
+      return res.status(404).json({ message: "Position not found" });
+    }
+
+    const sourceResult = await client.query(
+      `SELECT *
+       FROM interview_position
+       WHERE position_id = $1
+         AND (interview_scope = $2 OR interview_scope IS NULL)`,
+      [positionId, INTERVIEW_SCOPE],
+    );
+
+    if (!sourceResult.rows.length) {
+      return res.status(404).json({ message: "Position not found" });
+    }
+
+    const questionResult = await client.query(
+      `SELECT *
+       FROM interview_position_question
+       WHERE position_id = $1
+       ORDER BY question_order ASC`,
+      [positionId],
+    );
+
+    const source = sourceResult.rows[0];
+    const finalSlug = await ensureUniqueSlug(
+      `${source.slug || source.title}-copy`,
+    );
+    const duplicateTitle = `${source.title} (Copy)`;
+
+    await client.query("BEGIN");
+    transactionStarted = true;
+
+    const positionInsertResult = await client.query(
+      `INSERT INTO interview_position (
+         title,
+         role_title,
+         department,
+         location,
+         employment_type,
+         short_description,
+         intro_video_key,
+         intro_video_title,
+         intro_video_description,
+         farewell_video_key,
+         farewell_video_title,
+         farewell_video_description,
+         thank_you_message,
+         thinking_time_seconds,
+         answer_time_seconds,
+         allowed_retakes,
+         slug,
+         status,
+         created_by,
+         intro_video_duration_seconds,
+         farewell_video_duration_seconds,
+         interview_scope
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9,
+         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+       )
+       RETURNING *`,
+      [
+        duplicateTitle,
+        source.role_title,
+        source.department || "",
+        source.location || "",
+        source.employment_type || "",
+        source.short_description || "",
+        null,
+        source.intro_video_title || "",
+        source.intro_video_description || "",
+        null,
+        source.farewell_video_title || "",
+        source.farewell_video_description || "",
+        source.thank_you_message || "",
+        source.thinking_time_seconds ?? 3,
+        source.answer_time_seconds ?? null,
+        source.allowed_retakes ?? 0,
+        finalSlug,
+        "draft",
+        req.user.user_id,
+        source.intro_video_duration_seconds ?? null,
+        source.farewell_video_duration_seconds ?? null,
+        source.interview_scope || INTERVIEW_SCOPE,
+      ],
+    );
+
+    const position = positionInsertResult.rows[0];
+    const introVideoKey = await cloneInterviewMediaKey({
+      sourceKey: source.intro_video_key,
+      kind: "intro",
+      positionId: position.position_id,
+    });
+    const farewellVideoKey = await cloneInterviewMediaKey({
+      sourceKey: source.farewell_video_key,
+      kind: "farewell",
+      positionId: position.position_id,
+    });
+
+    await client.query(
+      `UPDATE interview_position
+       SET
+         intro_video_key = $1,
+         farewell_video_key = $2,
+         updated_at = NOW()
+       WHERE position_id = $3`,
+      [introVideoKey, farewellVideoKey, position.position_id],
+    );
+
+    for (const item of questionResult.rows) {
+      const copiedQuestionVideoKey = await cloneInterviewMediaKey({
+        sourceKey: item.video_key,
+        kind: "question",
+        positionId: position.position_id,
+        questionId: crypto.randomUUID(),
+      });
+
+      await client.query(
+        `INSERT INTO interview_position_question (
+           position_id,
+           question_order,
+           title,
+           short_description,
+           video_key,
+           video_duration_seconds
+         )
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          position.position_id,
+          item.question_order,
+          item.title,
+          item.short_description || "",
+          copiedQuestionVideoKey,
+          item.video_duration_seconds ?? null,
+        ],
+      );
+    }
+
+    await client.query("COMMIT");
+    transactionStarted = false;
+
+    const payload = await buildPositionPayload(position);
+    res.status(201).json({ data: payload });
+  } catch (error) {
+    if (transactionStarted) {
+      await client.query("ROLLBACK");
+    }
+    console.error("Error duplicating interview position:", error);
+    res.status(500).json({ message: "Could not duplicate interview position" });
   } finally {
     client.release();
   }
@@ -591,13 +819,44 @@ async function getCandidateSubmissionDetail(req, res) {
     );
 
     const answers = await Promise.all(
-      answersResult.rows.map(async (row) => ({
-        ...row,
-        question_video_url: await getInterviewDownloadUrl(
-          row.question_video_key,
-        ),
-        answer_video_url: await getInterviewDownloadUrl(row.answer_video_key),
-      })),
+      answersResult.rows.map(async (row) => {
+        const questionVideoFileName = row.question_video_key
+          ? `interview-question-${row.question_order || "video"}.${String(
+              row.question_video_key,
+            )
+              .split(".")
+              .pop() || "webm"}`
+          : null;
+        const answerVideoFileName = row.answer_video_key
+          ? `candidate-answer-${row.question_order || "video"}.${String(
+              row.answer_video_key,
+            )
+              .split(".")
+              .pop() || "webm"}`
+          : null;
+
+        return {
+          ...row,
+          question_video_url: await getInterviewDownloadUrl(
+            row.question_video_key,
+          ),
+          answer_video_url: await getInterviewDownloadUrl(row.answer_video_key),
+          question_video_download_url: await getInterviewDownloadUrl(
+            row.question_video_key,
+            {
+              asAttachment: true,
+              fileName: questionVideoFileName,
+            },
+          ),
+          answer_video_download_url: await getInterviewDownloadUrl(
+            row.answer_video_key,
+            {
+              asAttachment: true,
+              fileName: answerVideoFileName,
+            },
+          ),
+        };
+      }),
     );
 
     res.status(200).json({
@@ -749,7 +1008,12 @@ async function deletePosition(req, res) {
       ...answerResult.rows.map((row) => row.answer_video_key),
     ];
 
-    await deleteInterviewObjects([...directKeys, ...prefixKeys.flat()]);
+    const sharedKeys = await getSharedInterviewMediaKeys(positionId, client);
+    const safeDirectKeys = directKeys.filter(
+      (key) => key && !sharedKeys.has(key),
+    );
+
+    await deleteInterviewObjects([...safeDirectKeys, ...prefixKeys.flat()]);
 
     await client.query("BEGIN");
     transactionStarted = true;
@@ -778,6 +1042,7 @@ module.exports = {
   getPositionById,
   getUploadUrl,
   createPosition,
+  duplicatePosition,
   updatePosition,
   updatePositionStatus,
   getCandidatesByPosition,

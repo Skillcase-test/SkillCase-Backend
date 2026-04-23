@@ -2,6 +2,7 @@ const {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  CopyObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } = require("@aws-sdk/client-s3");
@@ -48,11 +49,22 @@ async function getInterviewUploadUrl({
   };
 }
 
-async function getInterviewDownloadUrl(
-  key,
-  expiresIn = INTERVIEW_DOWNLOAD_URL_EXPIRY_SECONDS,
-) {
+async function getInterviewDownloadUrl(key, options = {}) {
   if (!key) return null;
+
+  const normalizedOptions =
+    typeof options === "number"
+      ? { expiresIn: options }
+      : options && typeof options === "object"
+        ? options
+        : {};
+
+  const expiresIn =
+    Number(normalizedOptions.expiresIn) || INTERVIEW_DOWNLOAD_URL_EXPIRY_SECONDS;
+  const fileName = normalizedOptions.fileName
+    ? String(normalizedOptions.fileName)
+    : null;
+  const asAttachment = Boolean(normalizedOptions.asAttachment);
 
   if (INTERVIEW_S3_PUBLIC_BASE_URL) {
     const normalizedBase = INTERVIEW_S3_PUBLIC_BASE_URL.replace(/\/+$/, "");
@@ -60,10 +72,19 @@ async function getInterviewDownloadUrl(
     return `${normalizedBase}/${normalizedKey}`;
   }
 
-  const command = new GetObjectCommand({
+  const commandPayload = {
     Bucket: INTERVIEW_S3_BUCKET,
     Key: key,
-  });
+  };
+
+  if (asAttachment) {
+    const safeFileName = fileName
+      ? String(fileName).replace(/[^\w.\-]+/g, "_")
+      : "interview-video.webm";
+    commandPayload.ResponseContentDisposition = `attachment; filename="${safeFileName}"`;
+  }
+
+  const command = new GetObjectCommand(commandPayload);
 
   return getSignedUrl(interviewS3Client, command, {
     expiresIn,
@@ -115,10 +136,29 @@ async function deleteInterviewObjects(keys = []) {
   }
 }
 
+async function copyInterviewObject(sourceKey, destinationKey, contentType) {
+  if (!sourceKey || !destinationKey || sourceKey === destinationKey) {
+    return destinationKey;
+  }
+
+  await interviewS3Client.send(
+    new CopyObjectCommand({
+      Bucket: INTERVIEW_S3_BUCKET,
+      CopySource: `${INTERVIEW_S3_BUCKET}/${sourceKey}`,
+      Key: destinationKey,
+      ContentType: contentType,
+      MetadataDirective: contentType ? "REPLACE" : "COPY",
+    }),
+  );
+
+  return destinationKey;
+}
+
 module.exports = {
   interviewS3Client,
   getInterviewUploadUrl,
   getInterviewDownloadUrl,
   listInterviewObjectKeys,
   deleteInterviewObjects,
+  copyInterviewObject,
 };

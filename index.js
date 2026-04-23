@@ -33,6 +33,8 @@ const authRouter = require("./routes/authRouter");
 const eventRouter = require("./routes/eventRouter");
 const eventAdminRouter = require("./routes/eventAdminRouter");
 const adminAccessRouter = require("./routes/adminAccessRouter");
+const termsAdminRouter = require("./routes/termsAdminRouter");
+const termsPublicRouter = require("./routes/termsPublicRouter");
 
 const a2Router = require("./routes/a2/a2Router");
 const a2AdminRouter = require("./routes/a2/a2AdminRouter");
@@ -339,6 +341,14 @@ app.use(
 );
 
 app.use("/api/interview-tools", interviewToolPublicRouter);
+app.use(
+  "/api/admin/terms",
+  authMiddleware,
+  authorizeAdminOrSuperAdmin,
+  hydrateAdminAccess,
+  termsAdminRouter,
+);
+app.use("/api/terms", termsPublicRouter);
 
 // Wise
 app.use("/api/wise", wiseRouter);

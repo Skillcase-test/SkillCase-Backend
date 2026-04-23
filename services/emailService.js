@@ -98,25 +98,27 @@ const sendEventRegistrationEmail = async (registrationData) => {
     // Simple markdown to HTML converter for emails
     const parseMarkdownForEmail = (text) => {
       if (!text) return "";
-      return text
-        // Bold: **text** or __text__
-        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        .replace(/__(.+?)__/g, "<strong>$1</strong>")
-        // Italic: *text* or _text_
-        .replace(/\*(.+?)\*/g, "<em>$1</em>")
-        .replace(/_(.+?)_/g, "<em>$1</em>")
-        // Links: [text](url)
-        .replace(
-          /\[([^\]]+)\]\(([^)]+)\)/g,
-          '<a href="$2" style="color: #163B72;">$1</a>'
-        )
-        // Double newline to paragraph break
-        .replace(/\n\n/g, "</p><p>")
-        // Single newline to <br>
-        .replace(/\n/g, "<br>")
-        // Wrap in paragraph
-        .replace(/^/, "<p>")
-        .replace(/$/, "</p>");
+      return (
+        text
+          // Bold: **text** or __text__
+          .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+          .replace(/__(.+?)__/g, "<strong>$1</strong>")
+          // Italic: *text* or _text_
+          .replace(/\*(.+?)\*/g, "<em>$1</em>")
+          .replace(/_(.+?)_/g, "<em>$1</em>")
+          // Links: [text](url)
+          .replace(
+            /\[([^\]]+)\]\(([^)]+)\)/g,
+            '<a href="$2" style="color: #163B72;">$1</a>',
+          )
+          // Double newline to paragraph break
+          .replace(/\n\n/g, "</p><p>")
+          // Single newline to <br>
+          .replace(/\n/g, "<br>")
+          // Wrap in paragraph
+          .replace(/^/, "<p>")
+          .replace(/$/, "</p>")
+      );
     };
 
     // Format datetime for display
@@ -207,7 +209,7 @@ const sendEventRegistrationEmail = async (registrationData) => {
 const sendNewEventNotification = async (
   subscriberEmail,
   eventData,
-  unsubscribeToken
+  unsubscribeToken,
 ) => {
   const { title, description, startDatetime, timezone, coverImageUrl, slug } =
     eventData;
@@ -284,22 +286,147 @@ const sendNewEventNotification = async (
   }
 };
 
+const sendTermsInviteMail = async ({
+  to,
+  recipientName,
+  templateTitle,
+  signingUrl,
+}) => {
+  const sentDate = new Date().toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const agreementName = templateTitle || "Terms & Conditions";
+
+  const mailOptions = {
+    from: {
+      name: "Skillcase",
+      address: process.env.EMAIL_USER,
+    },
+    to,
+    subject: "Agreement Signing Request",
+    html: `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6; padding:20px 0;">
+  <tr>
+    <td align="center">
+
+      <!-- Main Card -->
+      <table width="520" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; border-radius:10px; border:1px solid #e5e7eb; font-family:'Segoe UI', Tahoma, Arial, sans-serif; color:#1f2937; overflow:hidden;">
+        
+        <!-- Header -->
+        <tr>
+          <td style="background:#163B72; color:#ffffff; padding:16px 20px; font-size:18px; font-weight:600;">
+            Agreement Signing Request
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:24px; line-height:1.6;">
+            
+            <p style="margin:0 0 12px 0;">
+              The Skillcase Team has requested you to review and sign 
+              <strong style="color:#163B72;">${agreementName}</strong>.
+            </p>
+
+            <p style="margin:0 0 18px 0;">
+              Please read the document carefully before proceeding with the signing process.
+            </p>
+
+            <!-- Info Box -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f9fafb; border-radius:8px; margin-bottom:20px;">
+              <tr>
+                <td style="padding:14px 16px;">
+                  <p style="margin:4px 0;"><strong>Sender:</strong> Skillcase</p>
+                  <p style="margin:4px 0;"><strong>Date:</strong> ${sentDate}</p>
+                  <p style="margin:4px 0;"><strong>Agreement:</strong> ${agreementName}</p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Button -->
+            <table align="center" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center">
+                  <a href="${signingUrl}" 
+                     style="display:inline-block; background:#163B72; color:#ffffff; padding:12px 22px; border-radius:8px; text-decoration:none; font-weight:600;">
+                    Start Signing
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+
+      </table>
+
+    </td>
+  </tr>
+</table>
+    `,
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  return { ok: true, messageId: info.messageId };
+};
+
+const sendSignedTermsMail = async ({
+  to,
+  recipientName,
+  templateTitle,
+  pdfBuffer,
+  pdfFileName,
+}) => {
+  const safeName = (pdfFileName || "Skillcase_Signed_Terms.pdf").replace(
+    /[^\w.\-]/g,
+    "_",
+  );
+  const mailOptions = {
+    from: {
+      name: "Skillcase",
+      address: process.env.EMAIL_USER,
+    },
+    to,
+    subject: `Signed Copy: ${templateTitle || "Terms & Conditions"}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+        <h2 style="margin-bottom: 4px;">Hello ${recipientName || "there"},</h2>
+        <p>Your document has been signed successfully.</p>
+        <p>Attached is the final signed PDF for your records.</p>
+        <p style="margin-top: 16px;">Skillcase Team</p>
+      </div>
+    `,
+    attachments: [
+      {
+        filename: safeName,
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      },
+    ],
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  return { ok: true, messageId: info.messageId };
+};
+
 // Notify all active subscribers about a new event
 const notifySubscribersNewEvent = async (eventData, pool) => {
   try {
     const subscribers = await pool.query(
-      "SELECT email, unsubscribe_token FROM event_subscription WHERE is_active = TRUE"
+      "SELECT email, unsubscribe_token FROM event_subscription WHERE is_active = TRUE",
     );
 
     const results = await Promise.allSettled(
       subscribers.rows.map((sub) =>
-        sendNewEventNotification(sub.email, eventData, sub.unsubscribe_token)
-      )
+        sendNewEventNotification(sub.email, eventData, sub.unsubscribe_token),
+      ),
     );
 
     const sent = results.filter((r) => r.status === "fulfilled").length;
     console.log(
-      `Sent ${sent}/${subscribers.rows.length} new event notifications`
+      `Sent ${sent}/${subscribers.rows.length} new event notifications`,
     );
     return { sent, total: subscribers.rows.length };
   } catch (err) {
@@ -313,4 +440,6 @@ module.exports = {
   sendEventRegistrationEmail,
   sendNewEventNotification,
   notifySubscribersNewEvent,
+  sendTermsInviteMail,
+  sendSignedTermsMail,
 };

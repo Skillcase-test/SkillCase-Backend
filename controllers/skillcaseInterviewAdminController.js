@@ -1,9 +1,11 @@
+const crypto = require("crypto");
 const { pool } = require("../util/db");
 const {
   getInterviewUploadUrl,
   getInterviewDownloadUrl,
   listInterviewObjectKeys,
   deleteInterviewObjects,
+  copyInterviewObject,
 } = require("../config/interviewS3");
 const {
   generateShortSlug,
@@ -11,8 +13,71 @@ const {
   buildInterviewStorageKey,
   parseFileExtension,
 } = require("../util/interviewToolsUtils");
+const { ADMIN_MODULES, ADMIN_ACTIONS } = require("../constants/adminPermissions");
 
 const INTERVIEW_SCOPE = "skillcase_interviews";
+
+function getKeyExtension(key = "", fallback = "webm") {
+  const match = String(key).match(/\.([^.]+)$/);
+  return match?.[1]?.toLowerCase() || fallback;
+}
+
+async function cloneInterviewMediaKey({
+  sourceKey,
+  kind,
+  positionId,
+  questionId = null,
+}) {
+  if (!sourceKey) return null;
+
+  const ext = getKeyExtension(sourceKey);
+  const destinationKey = buildInterviewStorageKey({
+    kind,
+    positionId,
+    questionId,
+    ext,
+  });
+
+  await copyInterviewObject(sourceKey, destinationKey, `video/${ext}`);
+  return destinationKey;
+}
+
+async function getSharedInterviewMediaKeys(positionId, db = pool) {
+  const result = await db.query(
+    `WITH target_keys AS (
+       SELECT intro_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id = $1 AND intro_video_key IS NOT NULL
+       UNION
+       SELECT farewell_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id = $1 AND farewell_video_key IS NOT NULL
+       UNION
+       SELECT video_key AS s3_key
+       FROM interview_position_question
+       WHERE position_id = $1 AND video_key IS NOT NULL
+     ),
+     other_refs AS (
+       SELECT intro_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id <> $1 AND intro_video_key IS NOT NULL
+       UNION ALL
+       SELECT farewell_video_key AS s3_key
+       FROM interview_position
+       WHERE position_id <> $1 AND farewell_video_key IS NOT NULL
+       UNION ALL
+       SELECT video_key AS s3_key
+       FROM interview_position_question
+       WHERE position_id <> $1 AND video_key IS NOT NULL
+     )
+     SELECT DISTINCT t.s3_key
+     FROM target_keys t
+     JOIN other_refs o ON o.s3_key = t.s3_key`,
+    [positionId],
+  );
+
+  return new Set(result.rows.map((row) => row.s3_key).filter(Boolean));
+}
 
 function isNumericId(value) {
   return /^\d+$/.test(String(value ?? ""));
@@ -22,6 +87,13 @@ function isSuperAdmin(req) {
   return Boolean(
     req?.adminAccess?.isSuperAdmin || req?.user?.role === "super_admin",
   );
+}
+
+function hasSkillcaseInterviewSuperAccess(req) {
+  if (isSuperAdmin(req)) return true;
+  const skillcasePermissions =
+    req?.adminAccess?.permissions?.[ADMIN_MODULES.SKILLCASE_INTERVIEWS] || [];
+  return skillcasePermissions.includes(ADMIN_ACTIONS.MANAGE);
 }
 
 async function getPositionAccess(positionId, req, db = pool) {
@@ -34,7 +106,10 @@ async function getPositionAccess(positionId, req, db = pool) {
     return { allowed: false, status: 404, message: "Position not found" };
   }
 
-  if (isSuperAdmin(req) || result.rows[0].created_by === req.user.user_id) {
+  if (
+    hasSkillcaseInterviewSuperAccess(req) ||
+    result.rows[0].created_by === req.user.user_id
+  ) {
     return { allowed: true, position: result.rows[0] };
   }
 
@@ -107,7 +182,7 @@ async function listPositions(req, res) {
     const params = [INTERVIEW_SCOPE];
     let whereClause = "WHERE p.interview_scope = $1";
 
-    if (!isSuperAdmin(req)) {
+    if (!hasSkillcaseInterviewSuperAccess(req)) {
       whereClause += " AND p.created_by = $2";
       params.push(req.user.user_id);
     }
@@ -347,6 +422,167 @@ async function createPosition(req, res) {
   }
 }
 
+async function duplicatePosition(req, res) {
+  const { positionId } = req.params;
+  const client = await pool.connect();
+  let transactionStarted = false;
+
+  try {
+    const access = await getPositionAccess(positionId, req, client);
+    if (!access.allowed) {
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    const sourceResult = await client.query(
+      `SELECT *
+       FROM interview_position
+       WHERE position_id = $1
+         AND interview_scope = $2`,
+      [positionId, INTERVIEW_SCOPE],
+    );
+
+    if (!sourceResult.rows.length) {
+      return res.status(404).json({ message: "Position not found" });
+    }
+
+    const questionResult = await client.query(
+      `SELECT *
+       FROM interview_position_question
+       WHERE position_id = $1
+       ORDER BY question_order ASC`,
+      [positionId],
+    );
+
+    const source = sourceResult.rows[0];
+    const finalSlug = await ensureUniqueSlug(`${source.slug || source.title}-copy`);
+    const duplicateTitle = `${source.title} (Copy)`;
+
+    await client.query("BEGIN");
+    transactionStarted = true;
+
+    const positionInsertResult = await client.query(
+      `INSERT INTO interview_position (
+         title,
+         role_title,
+         department,
+         location,
+         employment_type,
+         short_description,
+         intro_video_key,
+         intro_video_title,
+         intro_video_description,
+         farewell_video_key,
+         farewell_video_title,
+         farewell_video_description,
+         thank_you_message,
+         thinking_time_seconds,
+         answer_time_seconds,
+         allowed_retakes,
+         slug,
+         status,
+         created_by,
+         intro_video_duration_seconds,
+         farewell_video_duration_seconds,
+         interview_scope
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9,
+         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+       )
+       RETURNING *`,
+      [
+        duplicateTitle,
+        source.role_title,
+        source.department || "",
+        source.location || "",
+        source.employment_type || "",
+        source.short_description || "",
+        null,
+        source.intro_video_title || "",
+        source.intro_video_description || "",
+        null,
+        source.farewell_video_title || "",
+        source.farewell_video_description || "",
+        source.thank_you_message || "",
+        source.thinking_time_seconds ?? 3,
+        source.answer_time_seconds ?? null,
+        source.allowed_retakes ?? 0,
+        finalSlug,
+        "draft",
+        req.user.user_id,
+        source.intro_video_duration_seconds ?? null,
+        source.farewell_video_duration_seconds ?? null,
+        source.interview_scope || INTERVIEW_SCOPE,
+      ],
+    );
+
+    const position = positionInsertResult.rows[0];
+    const introVideoKey = await cloneInterviewMediaKey({
+      sourceKey: source.intro_video_key,
+      kind: "intro",
+      positionId: position.position_id,
+    });
+    const farewellVideoKey = await cloneInterviewMediaKey({
+      sourceKey: source.farewell_video_key,
+      kind: "farewell",
+      positionId: position.position_id,
+    });
+
+    await client.query(
+      `UPDATE interview_position
+       SET
+         intro_video_key = $1,
+         farewell_video_key = $2,
+         updated_at = NOW()
+       WHERE position_id = $3`,
+      [introVideoKey, farewellVideoKey, position.position_id],
+    );
+
+    for (const item of questionResult.rows) {
+      const copiedQuestionVideoKey = await cloneInterviewMediaKey({
+        sourceKey: item.video_key,
+        kind: "question",
+        positionId: position.position_id,
+        questionId: crypto.randomUUID(),
+      });
+
+      await client.query(
+        `INSERT INTO interview_position_question (
+           position_id,
+           question_order,
+           title,
+           short_description,
+           video_key,
+           video_duration_seconds
+         )
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          position.position_id,
+          item.question_order,
+          item.title,
+          item.short_description || "",
+          copiedQuestionVideoKey,
+          item.video_duration_seconds ?? null,
+        ],
+      );
+    }
+
+    await client.query("COMMIT");
+    transactionStarted = false;
+
+    const payload = await buildPositionPayload(position);
+    res.status(201).json({ data: payload });
+  } catch (error) {
+    if (transactionStarted) {
+      await client.query("ROLLBACK");
+    }
+    console.error("Error duplicating interview position:", error);
+    res.status(500).json({ message: "Could not duplicate interview position" });
+  } finally {
+    client.release();
+  }
+}
+
 async function updatePosition(req, res) {
   const { positionId } = req.params;
   const access = await getPositionAccess(positionId, req);
@@ -432,7 +668,7 @@ async function updatePosition(req, res) {
     ];
 
     let whereClause = "WHERE position_id = $19 AND interview_scope = $22";
-    if (!isSuperAdmin(req)) {
+    if (!hasSkillcaseInterviewSuperAccess(req)) {
       whereClause += " AND created_by = $23";
       params.push(req.user.user_id);
     }
@@ -529,7 +765,7 @@ async function updatePositionStatus(req, res) {
 
     const params = [status, positionId, INTERVIEW_SCOPE];
     let whereClause = "WHERE position_id = $2 AND interview_scope = $3";
-    if (!isSuperAdmin(req)) {
+    if (!hasSkillcaseInterviewSuperAccess(req)) {
       whereClause += " AND created_by = $4";
       params.push(req.user.user_id);
     }
@@ -637,13 +873,44 @@ async function getCandidateSubmissionDetail(req, res) {
     );
 
     const answers = await Promise.all(
-      answersResult.rows.map(async (row) => ({
-        ...row,
-        question_video_url: await getInterviewDownloadUrl(
-          row.question_video_key,
-        ),
-        answer_video_url: await getInterviewDownloadUrl(row.answer_video_key),
-      })),
+      answersResult.rows.map(async (row) => {
+        const questionVideoFileName = row.question_video_key
+          ? `skillcase-question-${row.question_order || "video"}.${String(
+              row.question_video_key,
+            )
+              .split(".")
+              .pop() || "webm"}`
+          : null;
+        const answerVideoFileName = row.answer_video_key
+          ? `learner-answer-${row.question_order || "video"}.${String(
+              row.answer_video_key,
+            )
+              .split(".")
+              .pop() || "webm"}`
+          : null;
+
+        return {
+          ...row,
+          question_video_url: await getInterviewDownloadUrl(
+            row.question_video_key,
+          ),
+          answer_video_url: await getInterviewDownloadUrl(row.answer_video_key),
+          question_video_download_url: await getInterviewDownloadUrl(
+            row.question_video_key,
+            {
+              asAttachment: true,
+              fileName: questionVideoFileName,
+            },
+          ),
+          answer_video_download_url: await getInterviewDownloadUrl(
+            row.answer_video_key,
+            {
+              asAttachment: true,
+              fileName: answerVideoFileName,
+            },
+          ),
+        };
+      }),
     );
 
     res.status(200).json({
@@ -800,7 +1067,12 @@ async function deletePosition(req, res) {
       ...answerResult.rows.map((row) => row.answer_video_key),
     ];
 
-    await deleteInterviewObjects([...directKeys, ...prefixKeys.flat()]);
+    const sharedKeys = await getSharedInterviewMediaKeys(positionId, client);
+    const safeDirectKeys = directKeys.filter(
+      (key) => key && !sharedKeys.has(key),
+    );
+
+    await deleteInterviewObjects([...safeDirectKeys, ...prefixKeys.flat()]);
 
     await client.query("BEGIN");
     transactionStarted = true;
@@ -829,6 +1101,7 @@ module.exports = {
   getPositionById,
   getUploadUrl,
   createPosition,
+  duplicatePosition,
   updatePosition,
   updatePositionStatus,
   getCandidatesByPosition,

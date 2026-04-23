@@ -86,6 +86,7 @@ async function initDb(pool) {
     // A1 revamp
     await pool.query(queries.createA1Tables);
     await pool.query(queries.createAdminRBAC);
+    await pool.query(queries.createTermsSigningTables);
 
     console.log("Tables created or already exist!");
   } catch (err) {

@@ -77,10 +77,6 @@ router.use(
   requireAdminPermission(ADMIN_MODULES.STORIES, ADMIN_ACTIONS.MANAGE),
 );
 router.use(
-  "/agreements",
-  requireAdminPermission(ADMIN_MODULES.AGREEMENTS, ADMIN_ACTIONS.VIEW),
-);
-router.use(
   "/upload/notification-image",
   requireAdminPermission(ADMIN_MODULES.NOTIFICATIONS, ADMIN_ACTIONS.EDIT),
 );
