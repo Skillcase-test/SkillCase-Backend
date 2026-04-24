@@ -723,7 +723,7 @@ async function getSubmissions(req, res) {
 
     // 2. Fetch all submissions to return
     const result = await pool.query(
-      `SELECT s.*, u.username, u.fullname
+      `SELECT s.*, u.username, u.fullname, u.number
        FROM hardcore_test_submission s
        JOIN app_user u ON u.user_id = s.user_id
        WHERE s.test_id = $1
@@ -845,7 +845,7 @@ async function getSubmissionDetail(req, res) {
   const { submissionId } = req.params;
   try {
     const subResult = await pool.query(
-      `SELECT s.*, u.username, u.fullname,
+      `SELECT s.*, u.username, u.fullname, u.number,
               t.title, t.duration_minutes, t.test_id
        FROM hardcore_test_submission s
        JOIN app_user u ON u.user_id = s.user_id
@@ -875,6 +875,7 @@ async function getSubmissionDetail(req, res) {
         submission_id: submission.submission_id,
         username: submission.username,
         fullname: submission.fullname,
+        number: submission.number,
         status: submission.status,
         score: submission.score,
         earned_points: submission.earned_points,
