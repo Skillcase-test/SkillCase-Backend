@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const { pool } = require("../util/db");
-const { uploadTermsBuffer, getTermsDownloadUrl } = require("../services/termsS3Service");
+const { uploadTermsBuffer, getTermsDownloadUrl, deleteTermsObject } = require("../services/termsS3Service");
 const { sendTermsInviteMail } = require("../services/emailService");
 const { TERMS_TOKEN_TTL_HOURS } = require("../config/configuration");
 
@@ -39,11 +39,28 @@ async function appendEnvelopeEvent(client, envelopeId, eventType, payload = {}) 
 
 async function listTemplates(req, res) {
   try {
+    const adminAccess = req.adminAccess || {};
+    const isSuperAdmin = adminAccess.isSuperAdmin;
+    const termsScope = adminAccess.terms || {};
+
+    let whereSql = "";
+    const params = [];
+
+    if (!isSuperAdmin && !termsScope.has_full_access) {
+      if (!termsScope.template_ids || termsScope.template_ids.length === 0) {
+        return res.json({ templates: [] });
+      }
+      params.push(termsScope.template_ids);
+      whereSql = "WHERE template_id = ANY($1::uuid[])";
+    }
+
     const result = await pool.query(
       `SELECT template_id, title, description, source_pdf_filename, page_count, status,
               created_by, created_at, updated_at
        FROM terms_template
+       ${whereSql}
        ORDER BY updated_at DESC`,
+      params
     );
     return res.json({ templates: result.rows });
   } catch (error) {
@@ -142,19 +159,11 @@ async function saveTemplateFields(req, res) {
       return res.status(404).json({ msg: "Template not found" });
     }
 
-    const seenKeys = new Set();
     const preparedFields = [];
     for (let index = 0; index < fields.length; index += 1) {
       const field = fields[index] || {};
       if (!isNonEmptyString(field.field_type)) continue;
       const fieldKey = normalizeFieldKey(field.field_key, `field_${index + 1}`);
-      if (seenKeys.has(fieldKey.toLowerCase())) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          msg: `Duplicate field key found: ${fieldKey}. Each field key must be unique per template.`,
-        });
-      }
-      seenKeys.add(fieldKey.toLowerCase());
       preparedFields.push({
         ...field,
         field_key: fieldKey,
@@ -202,11 +211,6 @@ async function saveTemplateFields(req, res) {
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("saveTemplateFields error:", error);
-    if (error?.code === "23505") {
-      return res.status(400).json({
-        msg: "Field keys must be unique per template.",
-      });
-    }
     return res.status(500).json({ msg: "Failed to save template fields" });
   } finally {
     client.release();
@@ -355,10 +359,23 @@ async function sendInvite(req, res) {
 
 async function listEnvelopes(req, res) {
   try {
+    const adminAccess = req.adminAccess || {};
+    const isSuperAdmin = adminAccess.isSuperAdmin;
+    const termsScope = adminAccess.terms || {};
+
     const templateId = req.query.template_id ? String(req.query.template_id) : null;
     const status = req.query.status ? String(req.query.status) : null;
     const values = [];
     const where = [];
+
+    if (!isSuperAdmin && !termsScope.has_full_access) {
+      if (!termsScope.template_ids || termsScope.template_ids.length === 0) {
+        return res.json({ envelopes: [] });
+      }
+      values.push(termsScope.template_ids);
+      where.push(`e.template_id = ANY($${values.length}::uuid[])`);
+    }
+
     if (templateId) {
       values.push(templateId);
       where.push(`e.template_id = $${values.length}`);
@@ -369,7 +386,7 @@ async function listEnvelopes(req, res) {
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const result = await pool.query(
-      `SELECT e.envelope_id, e.template_id, t.title AS template_title, e.recipient_email,
+      `SELECT e.envelope_id, e.document_id, e.template_id, t.title AS template_title, e.recipient_email,
               e.recipient_name, e.recipient_phone, e.status, e.expires_at, e.sent_at, e.viewed_at, e.signed_at,
               e.signed_pdf_key, e.signed_pdf_filename, e.created_at
        FROM terms_envelope e
@@ -452,6 +469,16 @@ async function deleteTemplate(req, res) {
       });
     }
 
+    // Fetch the S3 key before deleting the DB row so we can clean up storage.
+    const keyResult = await pool.query(
+      "SELECT source_pdf_key FROM terms_template WHERE template_id = $1",
+      [templateId],
+    );
+    if (!keyResult.rows.length) {
+      return res.status(404).json({ msg: "Template not found" });
+    }
+    const sourcePdfKey = keyResult.rows[0].source_pdf_key;
+
     const result = await pool.query(
       `DELETE FROM terms_template
        WHERE template_id = $1
@@ -461,6 +488,14 @@ async function deleteTemplate(req, res) {
     if (!result.rows.length) {
       return res.status(404).json({ msg: "Template not found" });
     }
+
+    // Best-effort S3 cleanup — log but do not fail the request if it errors.
+    if (sourcePdfKey) {
+      deleteTermsObject(sourcePdfKey).catch((s3Err) => {
+        console.error("deleteTemplate: failed to remove S3 object", sourcePdfKey, s3Err);
+      });
+    }
+
     return res.json({ success: true, template_id: templateId });
   } catch (error) {
     console.error("deleteTemplate error:", error);

@@ -95,6 +95,7 @@ async function generateSignedTermsPdf({
   envelope,
   signatureMode,
   signatureImageDataUrl = null,
+  documentId = null,
 }) {
   const pdfDoc = await PDFDocument.load(sourcePdfBuffer);
   const pages = pdfDoc.getPages();
@@ -102,6 +103,19 @@ async function generateSignedTermsPdf({
   const italicFont = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
   const signatureStyle = pickTypedSignatureStyle(envelope.envelope_id);
   const signatureFont = await pdfDoc.embedFont(signatureStyle.font);
+
+  // Burn document ID onto page 1 so it is permanently traceable in the signed PDF.
+  if (documentId && pages.length > 0) {
+    const firstPage = pages[0];
+    const { height: pageHeight } = firstPage.getSize();
+    firstPage.drawText(`Doc ID: ${documentId}`, {
+      x: 6,
+      y: pageHeight - 12,
+      size: 7,
+      font: regularFont,
+      color: rgb(0.55, 0.55, 0.55),
+    });
+  }
 
   for (const field of fields) {
     const pageNumber = Number(field.page_number);

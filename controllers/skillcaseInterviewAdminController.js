@@ -301,6 +301,7 @@ async function createPosition(req, res) {
     thank_you_message = "",
     thinking_time_seconds,
     answer_time_seconds,
+    overall_time_limit_minutes,
     allowed_retakes,
     slug,
     status = "draft",
@@ -318,6 +319,16 @@ async function createPosition(req, res) {
     return res.status(400).json({
       message: "title, details and at least one question are required",
     });
+  }
+
+  // H5: validate timer bounds — null means disabled; 1–480 minutes allowed
+  if (overall_time_limit_minutes != null) {
+    const parsedLimit = Number(overall_time_limit_minutes);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 480) {
+      return res.status(400).json({
+        message: "overall_time_limit_minutes must be null or an integer between 1 and 480",
+      });
+    }
   }
 
   const client = await pool.connect();
@@ -344,6 +355,7 @@ async function createPosition(req, res) {
          thank_you_message,
          thinking_time_seconds,
          answer_time_seconds,
+         overall_time_limit_minutes,
          allowed_retakes,
          slug,
          status,
@@ -354,7 +366,7 @@ async function createPosition(req, res) {
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
-         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
        )
        RETURNING *`,
       [
@@ -373,6 +385,7 @@ async function createPosition(req, res) {
         thank_you_message,
         thinking_time_seconds ?? 3,
         answer_time_seconds ?? null,
+        overall_time_limit_minutes ?? null,
         allowed_retakes ?? 0,
         finalSlug,
         status,
@@ -477,6 +490,7 @@ async function duplicatePosition(req, res) {
          thank_you_message,
          thinking_time_seconds,
          answer_time_seconds,
+         overall_time_limit_minutes,
          allowed_retakes,
          slug,
          status,
@@ -487,7 +501,7 @@ async function duplicatePosition(req, res) {
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
-         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
        )
        RETURNING *`,
       [
@@ -506,6 +520,7 @@ async function duplicatePosition(req, res) {
         source.thank_you_message || "",
         source.thinking_time_seconds ?? 3,
         source.answer_time_seconds ?? null,
+        source.overall_time_limit_minutes ?? null,
         source.allowed_retakes ?? 0,
         finalSlug,
         "draft",
@@ -613,6 +628,7 @@ async function updatePosition(req, res) {
     thank_you_message = "",
     thinking_time_seconds,
     answer_time_seconds,
+    overall_time_limit_minutes,
     allowed_retakes,
     slug,
     status = "draft",
@@ -630,6 +646,16 @@ async function updatePosition(req, res) {
     return res.status(400).json({
       message: "title, details and at least one question are required",
     });
+  }
+
+  // H5: validate timer bounds — null means disabled; 1–480 minutes allowed
+  if (overall_time_limit_minutes != null) {
+    const parsedLimit = Number(overall_time_limit_minutes);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 480) {
+      return res.status(400).json({
+        message: "overall_time_limit_minutes must be null or an integer between 1 and 480",
+      });
+    }
   }
 
   const client = await pool.connect();
@@ -658,6 +684,7 @@ async function updatePosition(req, res) {
       thank_you_message,
       thinking_time_seconds ?? 3,
       answer_time_seconds ?? null,
+      overall_time_limit_minutes ?? null,
       allowed_retakes ?? 0,
       finalSlug,
       status,
@@ -667,9 +694,9 @@ async function updatePosition(req, res) {
       INTERVIEW_SCOPE,
     ];
 
-    let whereClause = "WHERE position_id = $19 AND interview_scope = $22";
+    let whereClause = "WHERE position_id = $20 AND interview_scope = $23";
     if (!hasSkillcaseInterviewSuperAccess(req)) {
-      whereClause += " AND created_by = $23";
+      whereClause += " AND created_by = $24";
       params.push(req.user.user_id);
     }
 
@@ -691,11 +718,12 @@ async function updatePosition(req, res) {
          thank_you_message = $13,
          thinking_time_seconds = $14,
          answer_time_seconds = $15,
-         allowed_retakes = $16,
-         slug = $17,
-         status = $18,
-         intro_video_duration_seconds = $20,
-         farewell_video_duration_seconds = $21,
+         overall_time_limit_minutes = $16,
+         allowed_retakes = $17,
+         slug = $18,
+         status = $19,
+         intro_video_duration_seconds = $21,
+         farewell_video_duration_seconds = $22,
          updated_at = NOW()
        ${whereClause}
        RETURNING *`,

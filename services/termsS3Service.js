@@ -2,6 +2,7 @@ const {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const {
@@ -102,10 +103,21 @@ async function getTermsUploadUrl({
   return { uploadUrl, key, expiresIn };
 }
 
+async function deleteTermsObject(key) {
+  if (!key) return;
+  assertTermsBucketConfigured();
+  const command = new DeleteObjectCommand({
+    Bucket: TERMS_S3_BUCKET,
+    Key: key,
+  });
+  await termsS3Client.send(command);
+}
+
 module.exports = {
   termsS3Client,
   uploadTermsBuffer,
   getTermsDownloadUrl,
   getTermsUploadUrl,
   getTermsObjectBuffer,
+  deleteTermsObject,
 };

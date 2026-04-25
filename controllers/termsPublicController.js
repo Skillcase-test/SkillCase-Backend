@@ -271,6 +271,11 @@ async function submitSignedDocument(req, res) {
     ) {
       return res.status(400).json({ msg: "Invalid signature image format" });
     }
+    // H2: prevent DoS via oversized base64 signature images (cap at 5 MB decoded)
+    const SIGNATURE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+    if (parsedSignatureImage && parsedSignatureImage.buffer.length > SIGNATURE_IMAGE_MAX_BYTES) {
+      return res.status(400).json({ msg: "Signature image exceeds the 5 MB size limit" });
+    }
 
     const requiresSignature = fields.some((field) => isSignatureFieldUserRequired(field));
     const signatureFieldKeys = fields
@@ -320,6 +325,7 @@ async function submitSignedDocument(req, res) {
       envelope,
       signatureMode,
       signatureImageDataUrl,
+      documentId: token,
     });
     const signedPdfBuffer = Buffer.from(signedPdfBytes);
     const safeTitle = normalizeString(envelope.template_title).replace(/[^\w.\-]+/g, "_") || "Terms";
@@ -350,9 +356,10 @@ async function submitSignedDocument(req, res) {
            signed_at = CURRENT_TIMESTAMP,
            signed_pdf_key = $2,
            signed_pdf_filename = $3,
+           document_id = $4,
            updated_at = CURRENT_TIMESTAMP
        WHERE envelope_id = $1`,
-      [envelope.envelope_id, signedPdfKey, signedFileName],
+      [envelope.envelope_id, signedPdfKey, signedFileName, token],
     );
 
     await client.query(
@@ -405,6 +412,7 @@ async function submitSignedDocument(req, res) {
     return res.json({
       success: true,
       envelope_id: envelope.envelope_id,
+      document_id: token,
       signed_pdf_url: signedPdfUrl,
     });
   } catch (error) {

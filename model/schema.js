@@ -1119,6 +1119,7 @@ CREATE INDEX IF NOT EXISTS idx_interview_answer_submission ON interview_submissi
 
 ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS intro_video_duration_seconds NUMERIC(10,2);
 ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS farewell_video_duration_seconds NUMERIC(10,2);
+ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS overall_time_limit_minutes INTEGER;
 ALTER TABLE interview_position_question ADD COLUMN IF NOT EXISTS video_duration_seconds NUMERIC(10,2);
 ALTER TABLE interview_position ADD COLUMN IF NOT EXISTS interview_scope VARCHAR(40);
 UPDATE interview_position
@@ -1433,6 +1434,23 @@ CREATE TABLE IF NOT EXISTS admin_wise_batch_access (
 );
 CREATE INDEX IF NOT EXISTS idx_admin_wise_batch_access_user ON admin_wise_batch_access(user_id);
 CREATE INDEX IF NOT EXISTS idx_admin_wise_batch_access_batch ON admin_wise_batch_access(batch_id);
+
+CREATE TABLE IF NOT EXISTS admin_terms_scope (
+  user_id VARCHAR(50) PRIMARY KEY REFERENCES app_user(user_id) ON DELETE CASCADE,
+  has_full_access BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_terms_template_access (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+  template_id UUID NOT NULL REFERENCES terms_template(template_id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, template_id)
+);
+CREATE INDEX IF NOT EXISTS idx_admin_terms_template_access_user ON admin_terms_template_access(user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_terms_template_access_template ON admin_terms_template_access(template_id);
 `;
 
 const createTermsSigningTables = `
@@ -1529,6 +1547,20 @@ CREATE TABLE IF NOT EXISTS terms_event_log (
 
 CREATE INDEX IF NOT EXISTS idx_terms_event_log_envelope
 ON terms_event_log(envelope_id, created_at DESC);
+
+ALTER TABLE terms_envelope
+  ADD COLUMN IF NOT EXISTS document_id TEXT;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'terms_template_field_template_id_field_key_key'
+  ) THEN
+    ALTER TABLE terms_template_field
+      DROP CONSTRAINT terms_template_field_template_id_field_key_key;
+  END IF;
+END $$;
 `;
 
 module.exports = {

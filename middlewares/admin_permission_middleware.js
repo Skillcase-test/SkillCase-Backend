@@ -2,7 +2,7 @@ const { pool } = require("../util/db");
 const { ADMIN_MODULES } = require("../constants/adminPermissions");
 
 async function getUserAdminPermissions(userId) {
-  const [permissionRows, wiseScopeRows, wiseBatchRows] = await Promise.all([
+  const [permissionRows, wiseScopeRows, wiseBatchRows, termsScopeRows, termsTemplateRows] = await Promise.all([
     pool.query(
       `SELECT module_key, action_key
        FROM admin_user_permission
@@ -18,6 +18,18 @@ async function getUserAdminPermissions(userId) {
     pool.query(
       `SELECT batch_id
        FROM admin_wise_batch_access
+       WHERE user_id = $1`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT has_full_access
+       FROM admin_terms_scope
+       WHERE user_id = $1`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT template_id
+       FROM admin_terms_template_access
        WHERE user_id = $1`,
       [userId],
     ),
@@ -37,6 +49,10 @@ async function getUserAdminPermissions(userId) {
       has_full_access: Boolean(wiseScopeRows.rows[0]?.has_full_access),
       batch_ids: wiseBatchRows.rows.map((row) => String(row.batch_id)),
     },
+    terms: {
+      has_full_access: Boolean(termsScopeRows.rows[0]?.has_full_access),
+      template_ids: termsTemplateRows.rows.map((row) => String(row.template_id)),
+    },
   };
 }
 
@@ -52,6 +68,10 @@ async function hydrateAdminAccess(req, res, next) {
         wise: {
           has_full_access: true,
           batch_ids: [],
+        },
+        terms: {
+          has_full_access: true,
+          template_ids: [],
         },
       };
       return next();
@@ -94,6 +114,16 @@ function requireAdminPermission(moduleKey, actionKey = "view") {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ msg: "not authenticated" });
     if (req.user.role === "super_admin") return next();
+
+    // Guard: hydrateAdminAccess must run before this middleware.
+    // If it did not, fail loudly rather than silently denying with a confusing message.
+    if (!req.adminAccess) {
+      console.error(
+        `requireAdminPermission(${moduleKey}, ${actionKey}): req.adminAccess is not set. ` +
+          "Ensure hydrateAdminAccess runs before this middleware.",
+      );
+      return res.status(403).json({ msg: "admin context not loaded" });
+    }
 
     const actions = req.adminAccess?.permissions?.[moduleKey] || [];
     if (!actions.includes(actionKey) && !actions.includes("manage")) {
