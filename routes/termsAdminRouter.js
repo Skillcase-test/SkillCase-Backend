@@ -6,6 +6,7 @@ const {
   getTemplateDetail,
   saveTemplateFields,
   updateTemplateStatus,
+  updateTemplateTitle,
   sendInvite,
   listEnvelopes,
   getEnvelopeDetail,
@@ -41,6 +42,11 @@ router.patch(
   "/templates/:templateId/status",
   requireAdminPermission(ADMIN_MODULES.TERMS, ADMIN_ACTIONS.EDIT),
   updateTemplateStatus,
+);
+router.patch(
+  "/templates/:templateId/title",
+  requireAdminPermission(ADMIN_MODULES.TERMS, ADMIN_ACTIONS.EDIT),
+  updateTemplateTitle,
 );
 router.delete(
   "/templates/:templateId",

@@ -241,6 +241,30 @@ async function updateTemplateStatus(req, res) {
   }
 }
 
+async function updateTemplateTitle(req, res) {
+  try {
+    const { templateId } = req.params;
+    const newTitle = String(req.body?.title || "").trim();
+    if (!newTitle) {
+      return res.status(400).json({ msg: "Title is required" });
+    }
+    const result = await pool.query(
+      `UPDATE terms_template
+       SET title = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE template_id = $1
+       RETURNING template_id, title, updated_at`,
+      [templateId, newTitle]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ msg: "Template not found" });
+    }
+    return res.json({ template: result.rows[0] });
+  } catch (error) {
+    console.error("updateTemplateTitle error:", error);
+    return res.status(500).json({ msg: "Failed to update title" });
+  }
+}
+
 async function sendInvite(req, res) {
   const client = await pool.connect();
   let transactionOpen = false;
@@ -509,6 +533,7 @@ module.exports = {
   getTemplateDetail,
   saveTemplateFields,
   updateTemplateStatus,
+  updateTemplateTitle,
   sendInvite,
   listEnvelopes,
   getEnvelopeDetail,
